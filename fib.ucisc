@@ -1,0 +1,102 @@
+# First program: similar to https://github.com/akkartik/mu/blob/cfdd5b8bf3a545aaf80a831327441c417e7fd02b/apps/ex1.subx 
+# Modified to call a function and return 42 (no linux OS for exit code)
+# Call function and return 42.
+#
+# To run:
+#   $ <TBD>
+
+#== code 0x0000
+
+Entry:
+  # Initialize the stack register
+  D/move/ 0.reg/PC/ stack_init.imm 1.reg/stack_init/
+  0/copy/ 1.mem/stack_init/ 0.imm 5.reg/stack pointer/ 0.sign
+
+  # Stack is now "empty"
+  
+  # Prep fib call
+  D/push return value & address/     1.reg/stack pointer/ 1.reg/stack pointer/ -4.imm
+  0/set return address on stack/     0.reg/PC/ 1.mem/stack pointer/ finish.disp 0.sign
+  D/push arg to stack/               1.reg/stack pointer/ 1.reg/stack pointer/ -2.imm
+ 
+  # Fibonacci of 0 
+  0/set fib arg to 0/                0.val 0.imm 1.mem/stack pointer/ 0.sign
+  0/call fib/                        0.reg/PC/ 0.reg/PC/ fib.disp 0.sign
+
+finish:
+
+  203/xor pc with itself/            0.reg/PC/ 0.reg/PC/ 0.inc 2.eff/store value, drop flags/
+
+fib:
+  D/load return pointer/             1.reg/stack pointer/ 3.reg/return pointer/ 4.imm
+  0/store 0 in return value/         0.val 0.imm 3.mem/stack pointer/ 0.sign
+
+  # fib(0) == 0
+  0/prepare fib-1 jump/              0.reg/PC/ 2.mem/jump/ fib-1.disp 0.sign
+  0/clear flags/                     0.val 0.imm/zero all flags/ 4.reg/flag register/ 0.sign
+  202/or arg with itself/            1.mem/stack pointer/ 1.mem 0.inc 3.eff/store and set flags/
+  200/jump if arg not zero/          2.mem/fib-1 address/ 0.reg/PC/ 0.inc 1.eff/set if not zero/
+ 
+  # return 0
+  D/load return address/             1.reg/stack pointer/ 2.reg/return address/ 2.imm
+  D/pop arg and return address/      1.reg/stack pointer/ 1.reg/stack pointer/ 4.imm
+  0/jump return/                     2.mem 0.reg/PC/ 0.imm 0.sign
+
+fib-1:
+  0/store 1 in return value/         0.val 1.imm 3.mem/stack pointer/ 0.sign
+
+  # fib arg is on stack, set zero flag
+  0/prepare fib-recurse jump/        0.reg/PC/ 2.mem/jump/ fib-recurse.disp 0.sign
+  0/clear flags/                     0.val 0.imm/zero all flags/ 4.reg/flag register/ 0.sign
+  20C/subtract 1 from arg/           1.mem/stack pointer/ 3.mem/set to 0x0001/ 0.inc 3.eff/store/
+  200/jump if arg not zero/          2.mem/fib-1 address/ 0.reg/PC/ 0.inc 1.eff/set if not zero/
+
+  # return 1
+  0/store 1 in return value/         0.val 1.imm 3.mem/stack pointer/ 0.sign
+  D/load return address/             1.reg/stack pointer/ 2.reg/return address/ 2.imm
+  D/pop arg and return address/      1.reg/stack pointer/ 1.reg/stack pointer/ 4.imm
+  0/jump return/                     2.mem 0.reg/PC/ 0.imm 0.sign
+
+fib-recurse:
+  D/original fib arg pointer/        1.reg/stack pointer/ 2.reg/fib arg pointer/ 0.imm
+
+  # Prep fib call
+  D/push return value & address/     1.reg/stack pointer/ 1.reg/stack pointer/ -4.imm
+  0/set return address on stack/     0.reg/PC/ 1.mem/stack pointer/ fib-recurse-2.disp 0.sign
+
+  # Setup fib(arg-1)
+  D/push call arg to stack/          1.reg/stack pointer/ 1.reg/stack pointer/ -2.imm
+  0/load 1 to arg/                   0.val 1.imm 1.mem/call arg pointer/ 0.sign
+  20C/subtract 1 from arg/           2.mem/original fib arg/ 1.mem/call arg pointer/ 0.inc 3.eff/store/
+  0/call fib(arg-1)/                 0.reg/PC/ 0.reg/PC/ fib.disp 1.sign
+
+fib-recurse-2:
+  # fib(arg-1) is now on the stack
+  D/original fib arg pointer/        1.reg/stack pointer/ 2.reg/fib arg pointer/ 2.imm
+
+  # Prep fib call
+  D/push return value & address/     1.reg/stack pointer/ 1.reg/stack pointer/ -4.imm
+  0/set return address on stack/     0.reg/PC/ 1.mem/stack pointer/ fib-finish.disp 0.sign
+
+  # Setup fib(arg-2)
+  D/push call arg to stack/          1.reg/stack pointer/ 1.reg/stack pointer/ -2.imm
+  0/load 1 to arg/                   0.val 2.imm 1.mem/call arg pointer/ 0.sign
+  20C/subtract 1 from arg/           2.mem/original fib arg/ 1.mem/call arg pointer/ 0.inc 3.eff/store/
+  0/call fib(arg-1)/                 0.reg/PC/ 0.reg/PC/ fib.disp 1.sign
+
+fib-finish:
+  # Stack: [result, return pointer, arg, fib(arg-1), fib(arg-2)]
+  D/fib(arg-1) pointer/              1.reg/stack pointer/ 2.reg/fib(arg-1) pointer/ 2.imm
+  20A/add fib(arg-1) + fib(arg-2)/   1.mem/stack pointer/ 2.mem/fib(arg-1) pointer/ 0.inc 3.eff/store/
+
+  # return result
+  D/result pointer/                  1.reg/stack pointer/ 3.reg/result pointer/ 8.imm
+  0/copy result to result/           2.mem/result value/ 3.mem/result pointer/ 0.imm 0.sign
+  D/return address pointer/          1.reg/stack pointer/ 2.reg/return address/ 6.imm
+  D/pop fib vars from stack/         1.reg/stack pointer/ 1.reg/stack pointer/ 8.imm
+  0/jump return/                     2.mem 0.reg/PC/ 0.imm 0.sign
+
+#== data
+
+stack_init:
+% FFFF

@@ -1,0 +1,106 @@
+#!/usr/bin/env ruby
+
+require "bundler/setup"
+require "micro_cisc"
+require "byebug"
+
+class MC
+  def initialize(file)
+    @file = file
+    parse
+  end
+
+  def parse
+    text = File.open(@file).read
+    line_number = 1
+    @instructions = []
+    address = 0
+    @labels = {}
+    errors = []
+    text.each_line do |line|
+      begin
+        ins = MicroCisc::Vm::InstructionParser.new(line)
+        if ins.label?
+          @labels[ins.label] = address
+          puts "#{line_number}: #{ins.label}"
+        elsif ins.instruction?
+          @instructions << ins
+          address += 2
+          puts "#{line_number}: 0x#{ins.encoded.to_s(16).upcase}" + ins.original
+        elsif ins.data?
+          @instructions << ins.data
+          address += ins.data.length
+          puts "#{line_number}: 0x#{ins.data.unpack("C*").map { |c| c.to_s(16) }.join}"
+        end
+      rescue ArgumentError => e
+        puts "Error on line #{line_number}: #{e.message}"
+        puts line
+        errors << [line_number, e, line]
+      end
+      line_number += 1
+    end
+
+    if errors.size > 0
+      puts
+      puts
+      puts "Errors found:"
+      puts
+      errors.each do |error|
+        puts "#{error[0]}: #{error[1]}\n  #{error[2]}"
+      end
+      exit(1)
+    end
+  end
+
+  def serialize(file = nil)
+    @serialize ||=
+      begin
+        words = []
+        @instructions.each do |ins|
+          if ins.is_a?(String)
+            address = words.length * 2
+            puts "#{address.to_s(16).upcase}: 0x#{ins.unpack("C*").map { |c| c.to_s(16) }.join}"
+            words += ins.unpack("S*")
+          else
+            address = words.length * 2
+            puts "#{address.to_s(16).upcase}: 0x#{ins.encoded(@labels, address).to_s(16).upcase}" + ins.original
+            words << ins.encoded(@labels, address)
+          end
+        end
+        output = words.pack("S*")
+        output
+      end
+
+    File.open(file, 'w') do |file|
+      file.write(output)
+    end if file
+
+    @serialize
+  end
+
+  def run
+    processor = MicroCisc::Vm::Processor.new(0, serialize)
+    begin
+      processor.run
+    rescue StandardError => e
+      puts "Execution terminated: #{e.message}"
+      puts "  #{e.backtrace.join("\n  ")}"
+    end
+    processor
+  end
+end
+
+if ARGV.length < 1
+  puts "Usage:"
+  puts "  ucisc <file_name>"
+  exit(0)
+end
+
+file_name = ARGV.first
+puts "Reading #{file_name}"
+mc = MC.new(file_name)
+puts "Writing #{file_name}.bin"
+bytes = mc.serialize("#{file_name}.bin")
+puts "Running program with #{bytes.size} bytes"
+mc.run
+puts "Done."
