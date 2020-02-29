@@ -58,9 +58,12 @@ module MicroCisc
         if @components.first == '%'
           @components.shift
           hex = @components.join
+          if hex.length % 2 == 1
+            raise ArgumentError, "Data segment has an odd number of hex value, byte data incomplete"
+          end
           bytes = []
-          hex.chars.each do |char|
-            bytes << (char.to_i(16) & 0xF)
+          (0...(hex.length / 2)).each do |index|
+            bytes << ((hex[index * 2, 2]).to_i(16) & 0xFF)
           end
           @data = bytes.pack("C*")
           return
@@ -177,84 +180,85 @@ module MicroCisc
           label_address = label_dictionary[@imm.first]
           raise ArgumentError, "Missing label '#{@imm.first}'" if label_address.nil?
           label_address = label_address & 0xFFFF
-          imm = label_address - current_address
+          if @imm.last == 'disp'
+            imm = label_address - current_address
+          elsif @imm.last == 'imm'
+            imm = label_address & 0xFF
+          else
+            raise ArgumentError, "Invalid immediate spec: 0x#{@imm.first.to_s(16).upcase}.#{@imm.last}"
+          end
           validate_immediate(imm)
         elsif ['move', 'copy'].include?(@operation)
           raise ArgumentError, "Unexpected immediate: #{@imm}"
         end
 
         if @operation == 'copy'
-          # 0SNDDDRR IIIIIIII
-          msb = (@sign << 6) | (@dir << 5) | (@dest << 2) | @reg
+          # 0SNDDRRR IIIIIIII
+          msb = (@sign << 6) | (@dir << 5) | (@dest << 3) | @reg
           ((msb & 0xFF) << 8) | (imm & 0xFF)
         elsif @operation == 'move'
           # 1101DDRR IIIIIIII
           msb = 0xD0 | (@dest << 2) | @reg
           ((msb & 0xFF) << 8) | (imm & 0xFF)
         elsif @operation == 'alu'
-          # 10NDDDRR MAAAAAEE
-          msb = 0x80 | (@dir << 5) | (@dest << 2) | @reg
+          # 10NDDRRR MAAAAAEE
+          msb = 0x80 | (@dir << 5) | (@dest << 3) | @reg
           lsb = (@inc << 7) | (@alu_code << 2) | @eff
           ((msb & 0xFF) << 8) | (lsb & 0xFF)
         end
       end
 
       def validate_args(first_arg, second_arg, imm_pos)
-        args = [first_arg, second_arg]
-        if @operation == 'move'
-          if args.any? { |arg| arg.last != 'reg' }
-            raise ArgumentError, "Move only supports 'reg' arguments"
-          elsif args.any? { |arg| arg.first < 0 || arg.first > 3 }
-            raise ArgumentError, "Register number out of bounds, expected between 0 and 3"
-          end
-        end
-
         register = nil
         dest = nil
 
-        if first_arg.last == 'val' && ['copy', 'alu'].include?(@operation)
-          register = validate_reg(first_arg, true)
+        if @operation == 'move'
           dir = 0
-          if imm_pos != 1
-            raise ArgumentError, "Invalid immediate position, it must follow 'val' arg"
-          end
-
-          dest = validate_dest(second_arg)
-        elsif first_arg.last == 'reg' && ['move'].include?(@operation)
-          register = validate_reg(first_arg, false)
-          dest = validate_dest(second_arg)
-        elsif first_arg.last == 'reg' && ['alu'].include?(@operation)
-          dir = 1
-          register = validate_reg(first_arg, false)
-          dest = validate_dest(second_arg)
-        elsif first_arg.last == 'reg' && ['copy'].include?(@operation)
-          register = validate_reg(second_arg, false)
-          dir = 1
-          dest = validate_dest(first_arg)
-        elsif first_arg.last == 'mem' && ['copy', 'alu'].include?(@operation)
-          if imm_pos == 1
-            register = validate_reg(first_arg, true)
-            dir = 0
-            dest = validate_dest(second_arg)
-          else
-            register = validate_reg(second_arg, false)
+          register = validate_reg(first_arg, true)
+          dest = validate_dest(second_arg, false)
+        elsif @operation == 'alu'
+          if first_arg.last == 'val' || second_arg.first > 3
             dir = 1
-            dest = validate_dest(first_arg)
+            register = validate_reg(second_arg, false)
+            dest = validate_dest(first_arg, true)
+          else
+            dir = 0
+            register = validate_reg(first_arg, true)
+            dest = validate_dest(second_arg, false)
+          end
+        elsif @operation == 'copy'
+          if imm_pos == 1
+            dir = 0
+            register = validate_reg(first_arg, true)
+            dest = validate_dest(second_arg, false)
+          elsif imm_pos == 2
+            dir = 1
+            register = validate_reg(second_arg, false)
+            dest = validate_dest(first_arg, true)
+          else
+            raise ArgumentError, "Invalid immediate position"
           end
         else
-          raise ArgumentError, "Invalid register spec, 0x#{first_arg.first.to_s(16)}.#{first_arg.last} not allowed as #{@operation} source"
+          raise ArgumentError, "Unsupported operation: #{@operation}"
         end
 
         [register, dest, dir]
       end
 
       def validate_reg(arg, source)
+        valid = false
         if @operation == 'move'
           valid = [0, 1, 2, 3].include?(arg.first) && arg.last == 'reg'
-        else
-          valid = arg.first >= 1 && arg.first <= 3 && arg.last == 'mem'
-          valid = valid || (source && arg.last == 'val' && arg.first == 0)
-          valid = valid || (!source && arg.last == 'reg' && arg.first == 0)
+        elsif @operation == 'alu'
+          valid = arg.first == 0 && arg.last == 'reg'
+          valid = valid || [1, 2, 3].include?(arg.first) && arg.last == 'mem'
+          valid = valid || [4, 5, 6, 7].include?(arg.first) && arg.last == 'reg'
+        elsif @operation == 'copy'
+          valid = arg.first == 0 && arg.last == 'reg'
+          valid = valid || [1, 2, 3].include?(arg.first) && arg.last == 'mem'
+          valid = valid || source && arg.first == 4 && arg.last == 'val'
+          valid = valid || !source && arg.first == 4 && arg.last == 'reg'
+          valid = valid || [5, 6, 7].include?(arg.first) && arg.last == 'reg'
         end
 
         if valid
@@ -264,12 +268,13 @@ module MicroCisc
         end
       end
 
-      def validate_dest(arg)
+      def validate_dest(arg, source)
         if @operation == 'move'
           valid = (arg.last == 'reg' && [0, 1, 2, 3].include?(arg.first))
         else
-          valid = (arg.last == 'mem' && [1, 2, 3].include?(arg.first))
-          valid = valid || (arg.last == 'reg' && [0, 4, 5, 6, 7].include?(arg.first))
+          valid = source && arg.first == 0 && arg.last == 'val'
+          valid = valid || !source && arg.first == 0 && arg.last == 'reg'
+          valid = valid || (arg.last == 'mem' && [1, 2, 3].include?(arg.first))
         end
         if valid
           arg.first

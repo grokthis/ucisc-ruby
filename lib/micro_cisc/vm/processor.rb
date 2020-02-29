@@ -29,7 +29,7 @@ module MicroCisc
       end
 
       def flags=(value)
-        @registers[4] = value
+        @registers[4] = value & 0xFFFF
       end
 
       def pc
@@ -37,7 +37,7 @@ module MicroCisc
       end
 
       def pc=(value)
-        @registers[0] = value
+        @registers[0] = value & 0xFFFF
       end
 
       def register(id)
@@ -45,11 +45,10 @@ module MicroCisc
       end
 
       def set_register(id, value)
-        @registers[id] = value
+        @registers[id] = value & 0xFFFF
       end
 
       def run
-        byebug
         while(true) do
           instruction = load(pc).unpack("S*").first
           instruction = Instruction.new(self, instruction)
@@ -60,7 +59,7 @@ module MicroCisc
       end
 
       def load(local_address)
-        if local_address < 0
+        if local_address < 0 || local_address > 65535
           raise ArgumentError, "Invalid local address: #{local_address}"
         end
         if local_address < @local_mem.size - 1
@@ -71,16 +70,10 @@ module MicroCisc
       end
 
       def store(local_address, value)
-        if local_address < 0
+        if local_address < 0 || local_address > 65535
           raise ArgumentError, "Invalid local address: #{local_address}"
         end
-        if packed_bytes.size != 2
-          raise ArgumentError, "Invalid number of packed bytes: #{packed_bytes.size}"
-        end
-        @local_mem[local_address] = packed_bytes[0]
-        if local_address < @local_mem.size - 1
-          @local_mem[local_address + 1] = packed_bytes[1]
-        end
+        @local_mem[local_address..(local_address + 1)] = value
       end
 
       def write_page(page_address, bytes)
