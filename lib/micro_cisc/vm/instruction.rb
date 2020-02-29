@@ -56,7 +56,6 @@ module MicroCisc
           puts "System error in decoding instruction"
           halt
         end
-        nil
       end
 
       def do_copy
@@ -104,6 +103,7 @@ module MicroCisc
         elsif source > 4
           processor.set_register(source - 4, value + immediate)
         end
+        "0x0 N: #{direction}, D: #{destination}, R: #{source}, IMM: #{immediate}, value: #{value}"
       end
 
       def do_move
@@ -126,13 +126,14 @@ module MicroCisc
         else
           processor.set_register(destination, value)
         end
+        "0xD D: #{destination}, R: #{source}, IMM: #{immediate}, value: #{value}"
       end
 
       def do_alu
         msb = @instruction[0]
         lsb = @instruction[1]
 
-        direction = (msb & 0x20) / 32
+        sign = (msb & 0x20) / 32
         destination = (msb & 0x18) / 8
         source = msb & 0x07
         increment = (lsb & 0x80) > 0
@@ -140,72 +141,73 @@ module MicroCisc
         effect = lsb & 0x03
 
         arg1 =
-          if direction == 0 && source == 0
+          if source == 0
             processor.pc
-          elsif direction == 0 && source < 4
+          elsif source < 4
             unpack(load(processor.register(source)))
-          elsif direction == 0 && source == 4
+          elsif source == 4
             processor.flags
-          elsif direction == 0 && source > 4
-            processor.register(source - 4)
-          elsif destination == 0
-            0x0
           else
-            unpack(load(processor.register(destination)))
+            processor.register(source - 4)
           end
 
         arg2 =
-          if direction == 1 && source == 0
-            processor.pc
-          elsif direction == 1 && source < 4
-            unpack(load(processor.register(source)))
-          elsif direction == 1 && source == 4
-            processor.flags
-          elsif direction == 1 && source > 4
-            processor.register(source - 4)
-          elsif destination == 0
+          if destination == 0
             processor.pc
           else
             unpack(load(processor.register(destination)))
           end
 
-        old_flags = processor.flags
-        store = effect >= 2 || (effect == 1 && zero_flag == 0) || (effect == 0 && zero_flag == 1)
+        store =
+          if increment || sign == 0
+            effect == 3 ||
+              (effect == 1 && zero_flag == 0) ||
+              (effect == 0 && zero_flag == 1)
+          else
+            (effect == 0 && negative_flag == 0) ||
+              (effect == 1 && negative_flag == 1) ||
+              (effect == 2 && overflow_flag == 0) ||
+              (effect == 3 && negative_flag == 0 && zero_flag == 1)
+          end
         value = compute(alu_code, arg1, arg2)
-        processor.flags = old_flags if effect == 2
-
         if !store
-          if increment && source >= 1 && source <= 3
-            processor.set_register(source, processor.register(source) + 2)
-          end
-          if increment && source != destination && destination >= 1 && destination <= 3
-            processor.set_register(destination, processor.register(destinatin) + 2)
-          end
-          return
+          increment(source, sign) if increment
+          increment(destination, sign) if increment && source != destination
+          return "0x2#{'%02x' % [alu_code]} D: #{destination}, R: #{source}, Sign: #{sign}, Inc: #{increment}, Eff: #{effect}, value: #{value}, skipping store"
         end
 
-        if direction == 0 && destination == 0
+        if destination == 0
           processor.pc = value
           @pc_modified = true
-        elsif direction == 0 && destination == 4
+        elsif destination == 4
           processor.flags == value
-        elsif direction == 0 && destination > 4
+        elsif destination > 4
           processor.set_register(destination - 4, value)
-        elsif direction == 0
-          store(processor.register(destination), pack(value))
-        elsif source == 0
-          processor.pc = value
-          @pc_modified = true
         else
-          store(processor.register(source), pack(value))
+          store(processor.register(destination), pack(value))
         end
         
-        if increment && source >= 1 && source <= 3
-          processor.set_register(source, processor.register(source) + 2)
-        end
-        if increment && source != destination && destination >= 1 && destination <= 3
-          processor.set_register(destination, processor.register(destination) + 2)
-        end
+        increment(source, sign) if increment
+        increment(destination, sign) if increment && source != destination
+        "0x2#{'%02x' % [alu_code]} D: #{destination}, R: #{source}, Sign: #{sign}, Inc: #{increment}, Eff: #{effect}, value: #{value}, stored"
+      end
+
+      def increment(r, sign)
+        return if r < 1 || r > 3
+        delta = sign ? -2 : 2
+        processor.set_register(r, processor.register(r) + delta)
+      end
+
+      def overflow_flag
+        processor.flags & 0x01
+      end
+
+      def carry_flag
+        (processor.flags >> 3) & 0x01
+      end
+
+      def negative_flag
+        (processor.flags >> 3) & 0x01
       end
 
       def zero_flag
@@ -259,13 +261,26 @@ module MicroCisc
             carry = 1
           end
           value = value & 0xFFFF
+        elsif alu_code == 0x0E
+          value = arg1 * arg2
+          if value > 0xFFFF
+            overflow = 1
+            carry = 1
+          end
+          value = value & 0xFFFF
+        elsif alu_code == 0x10
+          value = arg1 / arg2
+          value = value & 0xFFFF
+        elsif alu_code == 0x12
+          value = arg1 % arg2
+          value = value & 0xFFFF
         end
 
         zero = value == 0 ? 1 : 0
         positive = value > 0 ? 1 : 0
         negative = value < 0 ? 1 : 0
 
-        flags = overflow | (carry << 1) | (zero << 2) | (positive << 3) | (negative << 4)
+        flags = overflow | (carry << 1) | (zero << 2) | (negative << 3)
         processor.flags = (flags & 0xFFE0) | flags
         value
       end
@@ -278,7 +293,7 @@ module MicroCisc
       end
       
       def pack(value)
-        [value & 0xFF00, value & 0x00FF].pack("C*")
+        [(value & 0xFF00) >> 8, value & 0x00FF].pack("C*")
       end
 
       def halt

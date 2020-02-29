@@ -58,7 +58,7 @@ module MicroCisc
         if @components.first == '%'
           @components.shift
           hex = @components.join
-          if hex.length % 2 == 1
+          if hex.length % 4 != 0
             raise ArgumentError, "Data segment has an odd number of hex value, byte data incomplete"
           end
           bytes = []
@@ -123,7 +123,7 @@ module MicroCisc
           parsed = parse_component(to_parse)
           if ['val', 'reg', 'mem'].include?(parsed.last)
             args << parsed
-          elsif parsed.last == 'sign' && ['copy'].include?(@operation)
+          elsif parsed.last == 'sign' && ['copy', 'alu'].include?(@operation)
             @sign = validate_boolean(parsed, @sign)
           elsif parsed.last == 'inc' && ['alu'].include?(@operation)
             @inc = validate_boolean(parsed, @inc)
@@ -148,11 +148,24 @@ module MicroCisc
         if args.size != 2
           raise ArgumentError, "Missing source and/or destination arguments"
         end
-        if @sign.nil? && ['copy'].include?(@operation)
+        if @sign.nil? && ['copy', 'alu'].include?(@operation)
           raise ArgumentError, "Missing sign argument"
         end
         if @imm.nil? && ['copy', 'move'].include?(@operation)
           raise ArgumentError, "Missing immediate argument"
+        end
+        if @operation == 'alu'
+          if @inc.nil?
+            raise ArgumentError, "Missing increment argument"
+          end
+          if @eff.nil?
+            raise ArgumentError, "Missing effect argument"
+          end
+          if (@inc == 1 || @sign == 0) && @eff > 3
+            raise ArgumentError, "Effect must be 0-3 when 1.inc or 0.sign is specified"
+          elsif @inc == 0 && @sign == 1 && @eff < 4
+            raise ArgumentError, "Effect must be 4-7 when 0.inc and 0.sign is specified"
+          end
         end
         if @imm.is_a?(Numeric)
           validate_immediate(@imm)
@@ -201,9 +214,9 @@ module MicroCisc
           msb = 0xD0 | (@dest << 2) | @reg
           ((msb & 0xFF) << 8) | (imm & 0xFF)
         elsif @operation == 'alu'
-          # 10NDDRRR MAAAAAEE
-          msb = 0x80 | (@dir << 5) | (@dest << 3) | @reg
-          lsb = (@inc << 7) | (@alu_code << 2) | @eff
+          # 10SDDRRR MAAAAAEE
+          msb = 0x80 | (@sign << 5) | (@dest << 3) | @reg
+          lsb = (@inc << 7) | (@alu_code << 2) | @eff % 4
           ((msb & 0xFF) << 8) | (lsb & 0xFF)
         end
       end
@@ -250,6 +263,9 @@ module MicroCisc
         if @operation == 'move'
           valid = [0, 1, 2, 3].include?(arg.first) && arg.last == 'reg'
         elsif @operation == 'alu'
+          if !source
+            raise ArgumentError, "ALU operations must use a reg arg as the source."
+          end
           valid = arg.first == 0 && arg.last == 'reg'
           valid = valid || [1, 2, 3].include?(arg.first) && arg.last == 'mem'
           valid = valid || [4, 5, 6, 7].include?(arg.first) && arg.last == 'reg'

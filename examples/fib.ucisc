@@ -1,0 +1,87 @@
+# Compute the second Fibonacci number.
+#
+# To run:
+#   $ exe/ucisc fib.ucisc
+
+#== code 0x0000
+
+Entry:
+  # Initialize the stack register to 0xFFFF (which is -1 sign extended)
+  0/copy/                            0.val 5.reg/stack pointer/ -1.imm 1.sign 
+  # Init data stack
+  D/prep data stack/                 0.reg/PC/ data.imm 3.reg/stack pointer/
+
+  # Prep fib call
+  D/push arg, address/               1.reg/stack pointer/ 1.reg/stack pointer/ -2.imm
+  0/set return address on stack/     0.reg/PC/ finish.disp 0.sign 1.mem/stack pointer/
+ 
+  # Fibonacci of 2
+  0/call fib/                        0.reg/PC/ fib.disp 0.sign 0.reg/PC/
+
+finish:
+
+  203/xor pc with itself/            0.reg/PC/ 0.reg/PC/ 0.inc 3.eff/store value/
+
+fib:
+  # fib(0) == 0
+  D/set prep fib-1 jump/             0.reg/PC/ fib-1.imm 2.reg/call pointer/
+  202/or arg with itself/            3.mem/data/ 3.mem 0.inc 2.eff/set flags, don't store/
+  200/jump if arg not zero/          6.reg/fib-1 address/ 0.reg/PC/ 0.inc 1.eff/set if not zero/
+ 
+  # fib(0) == 0
+  0/jump return/                     1.mem/stack pointer/ 2.imm 0.sign 0.reg/PC/
+
+constants:
+% 01
+
+fib-1:
+  # fib arg is on stack, subtract 1
+  D/load constant/                   0.reg/PC/ constants.imm 2.reg
+  20C/subtract 1 from arg/           2.mem/constant 1/ 3.mem/data/ 0.inc 3.eff/set flags, store/
+
+  D/prep fib-recurse jump/           0.reg/PC/ fib-recurse.imm 2.reg
+  200/jump if arg not zero/          7.reg/fib-recurse address/ 0.reg/PC/ 0.inc 1.eff/set if not zero/
+
+  # fib(1) = 1
+  0/store 1 in return value/         4.val 1.imm 0.sign 3.mem/data/
+  0/jump return/                     1.mem/stack pointer/ 0.imm 0.sign 0.reg/PC/
+
+fib-recurse:
+  # duplicate arg - 1 on data stack, subtract one more
+  D/push arg to stack/               3.reg/data/ 3.reg 2.imm
+  0/duplicate arg - 1 on stack/      3.mem/data/ -2.imm 1.sign 3.mem/data/
+  D/load constant/                   0.reg/PC/ constants.imm 2.reg
+  20C/subtract 1 from arg/           2.mem/constant 1/ 3.mem/data/ 0.inc 3.eff/set flags, store/
+
+  D/push address/                    1.reg/stack pointer/ 1.reg/stack pointer/ -2.imm
+  0/set return address on stack/     0.reg/PC/ fib-recurse-2.disp 0.sign 1.mem/stack pointer/
+  0/call fib/                        0.reg/PC/ fib.disp 1.sign 0.reg/PC/
+
+fib-recurse-2:
+
+  # duplicate arg - 1
+  D/push arg to stack/               3.reg/data/ 3.reg 2.imm
+  0/duplicate arg - 1 on stack/      3.mem/data/ -4.imm 1.sign 3.mem/data/
+
+  0/set return address on stack/     0.reg/PC/ fib-finish.disp 0.sign 1.mem/stack pointer/
+  0/call fib/                        0.reg/PC/ fib.disp 1.sign 0.reg/PC/
+
+fib-finish:
+  # Data stack: arg - 1, fib(arg - 2), fib(arg - 1)
+  # Current stack: [return pointer, fib-finish]]
+ 
+  # TODO: finish this 
+  D/pointer to fib(arg-2)/           3.reg/data/ -2.imm 2.reg/fib(arg - 2)/
+  20A/add fib(arg-1) + fib(arg-2)/   2.mem/fib(arg-1)/ 3.mem/fib(arg-2)/ 0.inc 3.eff/store/
+
+  # Clear stack
+  0/copy result to return location/  1.mem/result/ 1.mem/result/ -8.imm 1.sign
+  D/pop from stack/                  1.reg/stack pointer/ 1.reg/stack pointer/ 8.imm
+
+  # return result
+  0/jump return/                     1.mem/stack pointer/ 2.imm 0.sign 0.reg/PC/
+
+data:
+% 02
+
+

@@ -81,7 +81,7 @@ class MC
   def run
     processor = MicroCisc::Vm::Processor.new(0, serialize)
     begin
-      processor.run
+      processor.run(true)
     rescue StandardError => e
       puts "Execution terminated: #{e.message}"
       puts "  #{e.backtrace.join("\n  ")}"
@@ -100,7 +100,7 @@ file_name = ARGV.first
 puts "Reading #{file_name}"
 mc = MC.new(file_name)
 puts "Writing #{file_name}.bin"
-bytes = mc.serialize("#{file_name}.bin")
+bytes = mc.serialize
 puts "Running program with #{bytes.size} bytes"
-#mc.run
+mc.run
 puts "Done."
