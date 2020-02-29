@@ -48,12 +48,16 @@ module MicroCisc
         @registers[id] = value & 0xFFFF
       end
 
-      def run
+      def run(debug = false)
         while(true) do
           instruction = load(pc).unpack("S*").first
           instruction = Instruction.new(self, instruction)
-          byebug
-          instruction.exec
+          puts "#{'%04x' % [self.pc]} #{instruction.exec}"
+          if instruction.pc_modified? && self.pc == 0
+            # Jumped to Entry:
+            # This is a make shift halt instruction for now
+            byebug # allow us to inspect the results
+          end
           self.pc += 2 unless instruction.pc_modified?
         end
       end

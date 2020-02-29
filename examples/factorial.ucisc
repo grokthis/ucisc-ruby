@@ -1,0 +1,84 @@
+# A recursive factorial algorithm
+# Inspired by the SubX example near the bottom of this post:
+# http://akkartik.name/post/mu-2019-1
+#
+# The goal is to compare the implementation of the uCISC ISA to x86
+# as well as roughly see how things line up with SubX and look for
+# the coming MuCISC goals
+#
+# To run:
+#   $ exe/ucisc examples/factorial.ucisc
+#
+# You will get 3 outputs:
+#   1 - Line numbered output with instructions encoded (label values are all 0)
+#   2 - Final instruction output with address numbers and final label substitutions
+#   3 - Instruction by instruction execution details, including the result "value"
+#
+# When the debugger pauses, get the output by entering:
+#
+#   instruction.unpack(load(register(1)))
+#
+# This will give you the value of 1.mem which is pointing to the end of the stack
+
+#== code 0x0000
+
+Entry:
+  # Initialize the stack register to 0xFFFF (which is -1 sign extended)
+  0/copy/                            0.val 5.reg/stack pointer/ -1.imm 1.sign 
+
+  # Prep fib call
+  D/push arg, address/               1.reg/stack pointer/ 1.reg/stack pointer/ -2.imm
+  0/set return address on stack/     0.reg/PC/ finish.disp 0.sign 1.mem/stack pointer/
+ 
+  # Call factorial
+  D/push arg, address/               1.reg/stack pointer/ 1.reg/stack pointer/ -2.imm
+  0/load factorial arg/              4.val 6.imm 0.sign 1.mem/stack pointer/
+  0/call factorial/                  0.reg/PC/ factorial.disp 0.sign 0.reg/PC/
+
+finish:
+
+  # The prototype VM pops into the debugger if you ever jump to 0x000
+  # It's a hack for now to add a break point
+  # I really just need a halt/debug instruction...
+  0/jump to Entry/                   0.reg/PC/ Entry.disp 1.sign 0.reg/PC/
+
+one:
+% 0001
+
+# Accepts return : address, n : int
+factorial:
+  # factorial(1) == 1
+  D/load constant/                   0.reg/PC/ one.imm 2.reg
+  20C/subtract 1 from n/             2.mem/n/ 1.mem/stack/ 0.inc 0.sign 2.eff/set flags/
+
+  D/prep jump return/                1.reg/stack pointer/ 2.imm 2.reg/return pointer/
+  200/jump if n == 1/                2.mem/address/ 0.reg/PC/ 0.inc 0.sign 0.eff/jump if zero/
+
+factorial,n-1:
+  # Prep return address
+  D/push address/                    1.reg/stack pointer/ 1.reg/stack pointer/ -2.imm
+  0/set return address on stack/     0.reg/PC/ factorial,n-1,cleanup.disp 0.sign 1.mem/stack pointer/
+
+  # Prep n-1
+  D/point 2.reg to n/                1.reg/stack/ 2.imm 2.reg/var reg/
+  D/push var to stack/               1.reg/stack pointer/ 1.reg/stack pointer/ -2.imm
+  200/copy var 2.mem (n) as arg/     2.mem/n/ 1.mem/arg/ 0.inc 0.sign 3.eff/set flags, store/
+
+  # Load 1 into 2.mem
+  D/load constant/                   0.reg/PC/ one.imm 2.reg
+  20C/subtract 1 from n on stack/    2.mem/1/ 1.mem/stack/ 0.inc 0.sign 3.eff/set flags, store/
+
+  # factorial(n-1)
+  0/call factorial/                  0.reg/PC/ factorial.disp 1.sign 0.reg/PC/
+
+factorial,n-1,cleanup:
+  # Stack: [factorial(n-1), return address]
+  D/reference factorial(n-1)/        1.reg/stack/ 0.imm 2.reg/factorial(n-1)/
+  D/pop stack/                       1.reg/stack pointer/ 1.reg/stack pointer/ 4.imm
+
+  # Compute n * factorial(n-1)
+  20E/multiply unsigned/             2.mem/factorial(n-1)/ 1.mem/n on stack/ 0.inc 0.sign 3.eff/set flags, store/
+
+factorial-return: 
+  0/jump return/                     1.mem/stack pointer/ 2.imm 0.sign 0.reg/PC/
+
