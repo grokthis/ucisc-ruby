@@ -102,5 +102,5 @@ mc = MC.new(file_name)
 puts "Writing #{file_name}.bin"
 bytes = mc.serialize("#{file_name}.bin")
 puts "Running program with #{bytes.size} bytes"
-mc.run
+#mc.run
 puts "Done."
