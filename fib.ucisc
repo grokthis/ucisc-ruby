@@ -1,9 +1,7 @@
-# First program: similar to https://github.com/akkartik/mu/blob/cfdd5b8bf3a545aaf80a831327441c417e7fd02b/apps/ex1.subx 
-# Modified to call a function and return 42 (no linux OS for exit code)
-# Call function and return 42.
+# Compute the second Fibonacci number.
 #
 # To run:
-#   $ <TBD>
+#   $ exe/ucisc fib.ucisc
 
 #== code 0x0000
 
