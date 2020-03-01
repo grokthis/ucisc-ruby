@@ -24,7 +24,6 @@ syntax match uciscComment /\/[^\/]*\//
 syntax match uciscComment /'[^ ]*/
 highlight link uciscComment Comment
 
-
 syntax match uciscLabel /\(^\s*\)\@=[a-zA-Z_:&$@!][^ ]*:/
 syntax match uciscLabel /\s\<[a-zA-Z_:&$@!][^.]*\>\(.disp\|imm\)\@=/
 highlight link uciscLabel Identifier
@@ -47,7 +46,6 @@ highlight link uciscOption Define
 
 syntax match uciscData /^[ ]*% *\([0-9a-fA-F][0-9a-fA-F][ ]*\)*/
 highlight link uciscData Number
-
 
 set comments-=:#
 set comments+=n:#
