@@ -16,10 +16,34 @@ setlocal formatoptions+=c  " but comments should still wrap
 
 setlocal iskeyword+=-,?,<,>
 
+syntax match uciscOpcode /\(^\|^[ ]\+\)[0-9A-Fa-f]\+/
+highlight link uciscOpcode Function
+
 syntax match uciscComment /#.*/
 syntax match uciscComment /\/[^\/]*\//
 syntax match uciscComment /'[^ ]*/
 highlight link uciscComment Comment
+
+syntax match uciscLabel /^[ ]*[a-zA-Z_:&$@!][^ ]*:/
+syntax match uciscLabel / [a-zA-Z_:&$@!][^.]*.\(disp\|imm\)/
+highlight link uciscLabel Identifier
+
+syntax match uciscImmediate / \(-\)\?[0-9a-fA-F]\+.\(disp\|imm\)/
+highlight link uciscImmediate Number
+
+syntax match uciscControl /^[ ]*[{}]/
+syntax match uciscControl / \(break\|loop\).\(disp\|imm\)/
+highlight link uciscControl Statement
+
+syntax match uciscArg / [0-9]\+.\(reg\|mem\|val\)/
+highlight link uciscArg Define
+
+syntax match uciscOption / [0-9]\+.\(sign\|inc\|eff\)/
+highlight link uciscOption Exception
+
+syntax match uciscData /^[ ]*% *\([0-9a-fA-F][0-9a-fA-F][ ]*\)*/
+highlight link uciscData Number
+
 
 set comments-=:#
 set comments+=n:#
