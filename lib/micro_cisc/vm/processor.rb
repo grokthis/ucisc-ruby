@@ -55,17 +55,27 @@ module MicroCisc
           count += 1
           instruction = load(pc).unpack("S*").first
           instruction = Instruction.new(self, instruction)
+          before = self.pc
           result = instruction.exec
-          puts "#{'%04x' % [self.pc]} #{result}" if debug
+          if debug
+            byebug if do_command("#{'%04x' % [before]} #{result} ")
+          end
           if instruction.pc_modified? && self.pc == 0
             delta = (Time.now - t0)
+            puts "Jump 0x000 detected..."
             puts "Finished #{count} instructions in #{delta}s"
-            # Jumped to Entry:
-            # This is a make shift halt instruction for now
-            byebug # allow us to inspect the results
+            count = 0
+            byebug if do_command
           end
           self.pc += 2 unless instruction.pc_modified?
         end
+      end
+
+      def do_command(prefix = '')
+        $stdout.print "#{prefix}> "
+        command = $stdin.readline
+        exit(1) if /exit/.match(command)
+        true if /break/.match(command)
       end
 
       def load(local_address)

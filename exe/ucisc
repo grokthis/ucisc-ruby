@@ -82,7 +82,7 @@ class MC
   def run
     processor = MicroCisc::Vm::Processor.new(0, serialize)
     begin
-      processor.run
+      processor.run(ARGV.include?('-d'))
     rescue StandardError => e
       puts "Execution terminated: #{e.message}"
       puts "  #{e.backtrace.join("\n  ")}"

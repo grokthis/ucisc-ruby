@@ -109,7 +109,7 @@ module MicroCisc
             processor.set_register(destination - 4, value)
           end
         end
-        "0x0 R: #{source}, D: #{destination}, E: #{@eff}, M: #{@inc}, IMM: #{immediate}, value: #{value}, #{'skipping ' if !store}store"
+        "0x0 R: #{source}, D: #{destination}, E: #{effect}, M: #{increment}, I: #{immediate}, value: #{value}, #{'skipping ' if !store}store"
       end
 
       def do_move
@@ -171,10 +171,9 @@ module MicroCisc
               (effect == 1 && zero_flag == 0) ||
               (effect == 0 && zero_flag == 1)
           else
-            (effect == 0 && negative_flag == 0) ||
-              (effect == 1 && negative_flag == 1) ||
-              (effect == 2 && overflow_flag == 0) ||
-              (effect == 3 && negative_flag == 0 && zero_flag == 1)
+            (effect == 4 && negative_flag == 0) ||
+              (effect == 5 && negative_flag == 1) ||
+              (effect == 6 && overflow_flag == 0)
           end
         value = compute(alu_code, arg1, arg2)
         if !store
