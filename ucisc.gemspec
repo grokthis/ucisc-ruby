@@ -4,17 +4,17 @@ Gem::Specification.new do |spec|
   spec.name          = "ucisc"
   spec.version       = MicroCisc::VERSION
   spec.authors       = ["Robert Butler"]
-  spec.email         = ["roberttheiv@gmail.com"]
+  spec.email         = ["robert at grokthiscommunity.net"]
 
   spec.summary       = %q{Micro instruction set vm & compiler for hobbyist computing}
-  spec.homepage      = "https://github.com/roberttheiv/ucisc-ruby"
+  spec.homepage      = "https://github.com/grokthis/ucisc-ruby"
   spec.license       = "MIT"
   spec.required_ruby_version = Gem::Requirement.new(">= 2.3.0")
 
   #spec.metadata["allowed_push_host"] = "TODO: Set to 'http://mygemserver.com'"
 
   spec.metadata["homepage_uri"] = spec.homepage
-  spec.metadata["source_code_uri"] = "https://github.com/roberttheiv/ucisc-ruby"
+  spec.metadata["source_code_uri"] = "https://github.com/grokthis/ucisc-ruby"
   #spec.metadata["changelog_uri"] = "TODO: Put your gem's CHANGELOG.md URL here."
 
   # Specify which files should be added to the gem when it is released.
