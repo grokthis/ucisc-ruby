@@ -24,22 +24,26 @@ syntax match uciscComment /\/[^\/]*\//
 syntax match uciscComment /'[^ ]*/
 highlight link uciscComment Comment
 
-syntax match uciscLabel /^[ ]*[a-zA-Z_:&$@!][^ ]*:/
-syntax match uciscLabel / [a-zA-Z_:&$@!][^.]*.\(disp\|imm\)/
+
+syntax match uciscLabel /\(^\s*\)\@=[a-zA-Z_:&$@!][^ ]*:/
+syntax match uciscLabel /\s\<[a-zA-Z_:&$@!][^.]*\>\(.disp\|imm\)\@=/
 highlight link uciscLabel Identifier
 
-syntax match uciscImmediate / \(-\)\?[0-9a-fA-F]\+.\(disp\|imm\)/
-highlight link uciscImmediate Number
+syntax match uciscDisp /\([a-zA-Z0-9_:&$@!].\)\@=\(disp\|imm\) \@=/
+highlight link uciscDisp Statement
 
 syntax match uciscControl /^[ ]*[{}]/
-syntax match uciscControl / \(break\|loop\).\(disp\|imm\)/
+syntax match uciscLabel /\(\s*\)\@=\(break\|loop\)\(.disp\|.imm\)\@=/
 highlight link uciscControl Statement
 
-syntax match uciscArg / [0-9]\+.\(reg\|mem\|val\)/
-highlight link uciscArg Define
+syntax match uciscImmediate /\s\<\(-\)\?\(0x\)\?[0-9a-fA-F]\+\>\([/.]\|\s\|$\)\@=/
+highlight link uciscImmediate Number
 
-syntax match uciscOption / [0-9]\+.\(sign\|inc\|eff\)/
-highlight link uciscOption Exception
+syntax match uciscArg /\(.\)\@=\<\(reg\|mem\|val\)\>\(\/\|\s\|$\)\@=/
+highlight link uciscArg Type
+
+syntax match uciscOption /\(.\)\@=\<\(sign\|inc\|eff\)\>\(\/\|\s\|$\)\@=/
+highlight link uciscOption Define
 
 syntax match uciscData /^[ ]*% *\([0-9a-fA-F][0-9a-fA-F][ ]*\)*/
 highlight link uciscData Number
