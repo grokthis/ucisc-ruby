@@ -40,7 +40,7 @@ module MicroCisc
       def exec
         @pc_modified = false
         msb = @instruction[0]
-        
+
         if msb & COPY_MASK == COPY_CODE
           do_copy
         elsif msb & MOVE_MASK == MOVE_CODE
@@ -61,57 +61,64 @@ module MicroCisc
       def do_copy
         msb = @instruction[0]
         lsb = @instruction[1]
-        sign = msb & 0x40 > 0
-        if sign
+
+        destination = (msb & 0x1C) >> 2
+        source = ((msb & 0x03) << 1) | (lsb >> 7)
+        effect = (msb & 0x60) >> 5
+        increment = (lsb & 0x40) >> 6 == 1
+        shift = source == 4 ? 0 : 1
+
+        if lsb & 0x20 > 0
+          # negative 6 digit value, with inferred 7th digit (0)
           # sign extend by repacking and unpacking as signed
-          immediate = [lsb].pack("C*").unpack("c*").first
+          immediate = [(lsb & 0x3F | 0xC0) << shift].pack("C*").unpack("c*").first
         else
-          immediate = lsb
+          # positive value
+          immediate = (lsb & 0x3F) << shift
         end
 
-        direction = (msb & 0x20) / 32
-        destination = (msb & 0x18) / 8
-        source = msb & 0x07
+        store =
+          effect == 3 ||
+          (effect == 2 && zero_flag == 0 && negative_flag == 0) ||
+          (effect == 1 && zero_flag == 0) ||
+          (effect == 0 && zero_flag == 1)
 
+        increment == store && increment
         value =
-          if direction == 0 && source == 0
+          if source == 0
             processor.pc + immediate
-          elsif direction == 0 && source < 4
+          elsif source < 4
+            processor.set_register(source, processor.register(source) - 2) if increment
             unpack(load(processor.register(source) + immediate))
-          elsif direction == 0 && source == 4
+          elsif source == 4
             immediate
-          elsif direction == 0 && source > 4
+          elsif source > 4
             processor.register(source - 4) + immediate
-          elsif destination == 0
-            0x0
-          else
-            unpack(load(processor.register(destination)))
           end
 
-        if direction == 0 && destination == 0
-          processor.pc = value
-          @pc_modified = true
-        elsif direction == 0
-          store(processor.register(destination), pack(value))
-        elsif source == 0
-          processor.pc = value + immediate
-          @pc_modified = true
-        elsif source < 4
-          store(processor.register(source) + immediate, pack(value))
-        elsif source == 4
-          processor.flags = value & immediate
-        elsif source > 4
-          processor.set_register(source - 4, value + immediate)
+        if store
+          if destination == 0
+            processor.pc = value
+            @pc_modified = true
+          elsif destination < 4
+            processor.set_register(destination, processor.register(destination) - 2) if increment && source != destination
+            store(processor.register(destination), pack(value))
+          elsif destination == 4
+            processor.flags
+          elsif destination > 4
+            processor.set_register(destination - 4, value)
+          end
         end
-        "0x0 N: #{direction}, D: #{destination}, R: #{source}, IMM: #{immediate}, value: #{value}"
+        "0x0 R: #{source}, D: #{destination}, E: #{@eff}, M: #{@inc}, IMM: #{immediate}, value: #{value}, #{'skipping ' if !store}store"
       end
 
       def do_move
         msb = @instruction[0]
-        immediate = [@instruction[1]].pack("C").unpack("c").first
 
         destination = (msb & 0xC) / 4
         source = msb & 0x03
+        shift = source == 4 ? 0 : 1
+        immediate = [@instruction[1] << shift].pack("C").unpack("c").first
 
         value =
           if source == 0
@@ -171,9 +178,7 @@ module MicroCisc
           end
         value = compute(alu_code, arg1, arg2)
         if !store
-          increment(source, sign) if increment
-          increment(destination, sign) if increment && source != destination
-          return "0x2#{'%02x' % [alu_code]} D: #{destination}, R: #{source}, Sign: #{sign}, Inc: #{increment}, Eff: #{effect}, value: #{value}, skipping store"
+          return "0x2#{'%02x' % [alu_code]} R: #{source}, D: #{destination}, Sign: #{sign}, Inc: #{increment}, Eff: #{effect}, value: #{value}, skipping store"
         end
 
         if destination == 0
@@ -189,7 +194,7 @@ module MicroCisc
         
         increment(source, sign) if increment
         increment(destination, sign) if increment && source != destination
-        "0x2#{'%02x' % [alu_code]} D: #{destination}, R: #{source}, Sign: #{sign}, Inc: #{increment}, Eff: #{effect}, value: #{value}, stored"
+        "0x2#{'%02x' % [alu_code]} R: #{source}, D: #{destination}, Sign: #{sign}, Inc: #{increment}, Eff: #{effect}, value: #{value}, stored"
       end
 
       def increment(r, sign)

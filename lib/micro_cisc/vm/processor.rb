@@ -49,11 +49,17 @@ module MicroCisc
       end
 
       def run(debug = false)
+        t0 = Time.now
+        count = 0
         while(true) do
+          count += 1
           instruction = load(pc).unpack("S*").first
           instruction = Instruction.new(self, instruction)
-          puts "#{'%04x' % [self.pc]} #{instruction.exec}"
+          result = instruction.exec
+          puts "#{'%04x' % [self.pc]} #{result}" if debug
           if instruction.pc_modified? && self.pc == 0
+            delta = (Time.now - t0)
+            puts "Finished #{count} instructions in #{delta}s"
             # Jumped to Entry:
             # This is a make shift halt instruction for now
             byebug # allow us to inspect the results

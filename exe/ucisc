@@ -17,9 +17,10 @@ class MC
     address = 0
     @labels = {}
     errors = []
+    lgen = MicroCisc::Compile::LabelGenerator.new(@file.gsub('.ucisc', ''))
     text.each_line do |line|
       begin
-        ins = MicroCisc::Vm::InstructionParser.new(line)
+        ins = MicroCisc::Compile::Instruction.new(lgen, line)
         if ins.label?
           @labels[ins.label] = address
           puts "#{line_number}: #{ins.label}"
@@ -81,7 +82,7 @@ class MC
   def run
     processor = MicroCisc::Vm::Processor.new(0, serialize)
     begin
-      processor.run(true)
+      processor.run
     rescue StandardError => e
       puts "Execution terminated: #{e.message}"
       puts "  #{e.backtrace.join("\n  ")}"
