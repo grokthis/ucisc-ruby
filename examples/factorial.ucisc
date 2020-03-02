@@ -26,19 +26,15 @@ Entry:
   # Initialize the stack register to 0xFFFF (which is -1 sign extended)
   0/load 0xFFFF to stack pointer/    4.val -1.imm 5.reg
 
-  # Prep factorial call
-  0/set return address on stack/     0.reg/PC/ finish.disp 1.mem/stack pointer/ 1.inc
- 
   # Call factorial
-  0/load factorial arg/              4.val 6.imm 1.mem/stack pointer/ 1.inc
-  0/call factorial/                  0.reg/PC/ factorial.disp 0.reg/PC/
+  (1.mem factorial 4.val 6.imm)
 
 finish:
 
   # The prototype VM pops into the debugger if you ever jump to 0x0000
   # It's a hack for now to add a break point
   # I really just need a halt/debug instruction...
-  0/jump to Entry/                   0.reg/PC/ Entry.disp 0.reg/PC/
+  0/jump to Entry/                   0.reg/pc/ Entry.disp 0.reg/pc/
 
 one:
 % 0001
@@ -46,35 +42,30 @@ one:
 # Accepts return : address, n : int
 factorial:
   # factorial(1) == 1
-  0/load constant/                   0.reg/PC/ one.disp 6.reg
-  20C/subtract 1 from n/             2.mem/n/ 1.mem/stack/ 1.sign 7.eff/set flags/
-  0/return jump if n == 1/           1.mem/stack pointer/ 2.imm 0.reg/PC/ 0.eff/if zero/
+  0/load constant/                   4.val 1.imm 6.reg
+  20C/subtract 1 from n/             6.reg/1/ 1.mem/sp/ 1.sign 7.eff/set flags/
+  0/return jump if n == 1/           1.mem/sp/ 2.imm 0.reg/pc/ 0.eff/if zero/
 
   # compute factorial(n-1)
   {
-    # Prep return address
-    0/set return address on stack/   0.reg/PC/ break.disp 1.mem/stack pointer/ 1.inc
-
     # Prep n-1
-    0/copy n to stack/               1.mem/stack/ 4.imm 1.mem/stack/ 1.inc
-
-    # Load 1 into 2.mem
-    D/load constant/                 0.reg/PC/ one.imm 2.reg
+    0/copy n to stack/               1.mem/stack/ 0.imm 1.mem/stack/ 1.inc
+    D/load constant/                 0.reg/pc/ one.imm 2.reg
     20C/subtract 1 from n on stack/  2.mem/1/ 1.mem/stack/ 0.sign
 
     # factorial(n-1)
-    0/call factorial/                0.reg/PC/ factorial.disp 0.reg/PC/
+    (1.mem/sp/ factorial 1.mem/sp/)
   }
 
   # multiply n * factorial(n-1), cleanup stack
   {
     # Stack: [factorial(n-1), return address]
     D/reference factorial(n-1)/      1.reg/stack/ 0.imm 2.reg/factorial(n-1)/
-    D/pop stack/                     1.reg/stack pointer/ 4.imm 1.reg/stack pointer/
+    D/pop stack/                     1.reg/sp/ 6.imm 1.reg/sp/
 
     # Compute n * factorial(n-1)
     20E/multiply unsigned/           2.mem/factorial(n-1)/ 1.mem/n on stack/ 0.sign
   }
 
-  0/jump return/                     1.mem/stack pointer/ 2.imm 0.reg/PC/
+  0/jump return/                     1.mem/sp/ 2.imm 0.reg/pc/
 

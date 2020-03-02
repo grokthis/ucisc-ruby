@@ -3,8 +3,9 @@ module MicroCisc
     class Instruction
       attr_reader :label, :instruction, :data, :imm, :sign, :dir, :reg, :dest, :original, :minimal
 
-      def initialize(label_generator, instruction)
+      def initialize(label_generator, minimal, original, additional_offset = 0)
         @label_generator = label_generator
+        @original = original
         @label = nil
         @operation = nil
         @sign = nil
@@ -12,9 +13,8 @@ module MicroCisc
         @imm = nil
         @reg = nil
         @dest = nil
-        @original = instruction
-        @minimal = filter_comments(instruction)
-        parse_ucisc(@minimal)
+        @additional_offset = additional_offset
+        parse_ucisc(minimal)
       end
 
       def data?
@@ -31,17 +31,6 @@ module MicroCisc
 
       def comment?
         !label? && !instruction?
-      end
-
-      def filter_comments(instruction)
-        # Remove all inline comments
-        instruction = instruction.to_s.strip.gsub(/\/[^\/]*\//, '')
-        # Remove all word comments
-        instruction = instruction.gsub(/'[^\s]*/, '')
-        # Remove all line comments
-        instruction = instruction.gsub(/#.*/, '')
-        # Single space
-        instruction.gsub(/\s+/, ' ')
       end
 
       def parse_ucisc(minimal_instruction)
@@ -140,7 +129,7 @@ module MicroCisc
           elsif (parsed.last == 'disp' || parsed.last == 'imm') && ['copy', 'move'].include?(@operation)
             raise ArgumentError, "Duplicate immediate value" if @imm
             if parsed.first.is_a?(Numeric)
-              @imm = parsed.first
+              @imm = parsed.first + @additional_offset
             else
               if parsed.first == 'break'
                 @imm = [@label_generator.end_label, parsed.last]
@@ -165,9 +154,7 @@ module MicroCisc
         @sign ||= 0
         @eff ||= 3
         @inc ||= 0
-        if @imm.nil? && ['copy', 'move'].include?(@operation)
-          raise ArgumentError, "Missing immediate argument"
-        end
+        @imm ||= 0 + @additional_offset
         if @operation == 'alu'
           if (@inc == 1 || @sign == 0) && @eff > 3
             raise ArgumentError, "Effect must be 0-3 when 1.inc or 0.sign is specified"
@@ -218,6 +205,7 @@ module MicroCisc
           else
             raise ArgumentError, "Invalid immediate spec: 0x#{@imm.first.to_s(16).upcase}.#{@imm.last}"
           end
+          imm += @additional_offset
           validate_immediate(imm, @reg)
         elsif ['move', 'copy'].include?(@operation)
           raise ArgumentError, "Unexpected immediate: #{@imm}"

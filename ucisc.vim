@@ -24,21 +24,22 @@ syntax match uciscComment /\/[^\/]*\//
 syntax match uciscComment /'[^ ]*/
 highlight link uciscComment Comment
 
-syntax match uciscLabel /\(^\s*\)\@=[a-zA-Z_:&$@!][^ ]*:/
-syntax match uciscLabel /\s\<[a-zA-Z_:&$@!][^.]*\>\(.disp\|imm\)\@=/
+syntax match uciscLabel /\(^\s*\)\@=[a-zA-Z_:&$@!][a-zA-Z0-9_:&$@!]*:/
+syntax match uciscLabel /\s\<[a-zA-Z_:&$@!][^,.]*\>\(.disp\|.imm\)\@=/
+syntax match uciscLabel /[a-zA-Z_:&$@!][a-zA-Z0-9_:&$@!]*/
 highlight link uciscLabel Identifier
 
-syntax match uciscDisp /\([a-zA-Z0-9_:&$@!].\)\@=\(disp\|imm\) \@=/
+syntax match uciscDisp /\([a-zA-Z0-9_:&$@!].\)\@=\(disp\|imm\)\([/.]\|\s\|)\|,\|$\)\@=/
 highlight link uciscDisp Statement
 
-syntax match uciscControl /^[ ]*[{}]/
-syntax match uciscLabel /\(\s*\)\@=\(break\|loop\)\(.disp\|.imm\)\@=/
+syntax match uciscControl /[(){}]/
+syntax match uciscControl /\<\(break\|loop\)\(.disp\|.imm\)\@=/
 highlight link uciscControl Statement
 
-syntax match uciscImmediate /\s\<\(-\)\?\(0x\)\?[0-9a-fA-F]\+\>\([/.]\|\s\|$\)\@=/
+syntax match uciscImmediate /\<\((\)\?\(-\)\?\(0x\)\?[0-9a-fA-F]\+\([/.]\|\s\|,\|$\)\@=/
 highlight link uciscImmediate Number
 
-syntax match uciscArg /\(.\)\@=\<\(reg\|mem\|val\)\>\(\/\|\s\|$\)\@=/
+syntax match uciscArg /\(.\)\@=\<\(reg\|mem\|val\)\>\(\/\|\s\|,\|)\|$\)\@=/
 highlight link uciscArg Type
 
 syntax match uciscOption /\(.\)\@=\<\(sign\|inc\|eff\)\>\(\/\|\s\|$\)\@=/

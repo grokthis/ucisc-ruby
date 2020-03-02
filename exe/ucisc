@@ -20,18 +20,20 @@ class MC
     lgen = MicroCisc::Compile::LabelGenerator.new(@file.gsub('.ucisc', ''))
     text.each_line do |line|
       begin
-        ins = MicroCisc::Compile::Instruction.new(lgen, line)
-        if ins.label?
-          @labels[ins.label] = address
-          puts "#{line_number}: #{ins.label}"
-        elsif ins.instruction?
-          @instructions << ins
-          address += 2
-          puts "#{line_number}: 0x#{ins.encoded.to_s(16).upcase}" + ins.original
-        elsif ins.data?
-          @instructions << ins.data
-          address += ins.data.length
-          puts "#{line_number}: 0x#{ins.data.unpack("C*").map { |c| c.to_s(16) }.join}"
+        statement = MicroCisc::Compile::Statement.new(lgen, line)
+        statement.parse.each do |instruction|
+          if instruction.label?
+            @labels[instruction.label] = address
+            puts "#{line_number}: #{instruction.label}"
+          elsif instruction.instruction?
+            @instructions << instruction
+            address += 2
+            puts "#{line_number}: 0x#{instruction.encoded.to_s(16).upcase}" + instruction.original
+          elsif instruction.data?
+            @instructions << instruction.data
+            address += instruction.data.length
+            puts "#{line_number}: 0x#{instruction.data.unpack("C*").map { |c| c.to_s(16) }.join}"
+          end
         end
       rescue ArgumentError => e
         puts "Error on line #{line_number}: #{e.message}"

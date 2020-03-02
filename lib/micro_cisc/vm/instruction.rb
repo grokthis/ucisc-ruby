@@ -88,7 +88,6 @@ module MicroCisc
           if source == 0
             processor.pc + immediate
           elsif source < 4
-            processor.set_register(source, processor.register(source) - 2) if increment
             unpack(load(processor.register(source) + immediate))
           elsif source == 4
             immediate
@@ -101,12 +100,15 @@ module MicroCisc
             processor.pc = value
             @pc_modified = true
           elsif destination < 4
-            processor.set_register(destination, processor.register(destination) - 2) if increment && source != destination
+            processor.set_register(destination, processor.register(destination) - 2) if increment
             store(processor.register(destination), pack(value))
           elsif destination == 4
             processor.flags
           elsif destination > 4
             processor.set_register(destination - 4, value)
+          end
+          if increment && source != destination && [1, 2, 3].include?(source)
+            processor.set_register(source, processor.register(source) - 2)
           end
         end
         "0x0 R: #{source}, D: #{destination}, E: #{effect}, M: #{increment}, I: #{immediate}, value: #{value}, #{'skipping ' if !store}store"
