@@ -56,7 +56,7 @@ Example line numbers:
 22: 0x6000  0 0.reg fib.disp 0.reg 0.inc 3.eff #   (1.mem fib 4.val 8.imm)
 ...
 ```
-i
+
 Note: as you can see in the example above, the function call
 gets added to each generated push and call command it generates.
 
@@ -100,7 +100,7 @@ At the prompt, you can do the following:
 * Type "exit" - exits the VM
 * Type "break" - opens the ruby debugger. You can inspect the
   memory and registers from here if desired.
-* Simply hit <enter> and the execution will continue
+* Simply hit "enter" and the execution will continue
 
 When in the ruby debugger, you can do the following to look at
 the stack value:
@@ -133,7 +133,7 @@ Running program with 60 bytes
 ```
 
 Notice the prompt after each instruction. The same break, exit
-or <enter> options are available as described above. The output
+or "enter" options are available as described above. The output
 lists the component parts of the instruction as decoded. The
 value is the value that was moved, manipulated or calculated.
 The final "store" or "skipping store" indicates if the value

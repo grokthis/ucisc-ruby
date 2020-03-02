@@ -1,17 +1,14 @@
 # Compute Fibonacci numbers
 #
-# By default, computes fib(8) == 21. Change the immediate on line 24
-# to compute other numbers. fib(0x18) is the maximum value that will
-# compute correctly. fib(0x19) and up will overflow 16-bits.
+# By default, computes fib(8) == 21. Change the imm on line 24
+# to compute other numbers. fib(0x18) is the maximum value that
+# will compute correctly. fib(0x19) and up will overflow 16-bits.
 #
 # To run:
 #   $ exe/ucisc examples/fib.ucisc
 #
-# When the debugger pauses, get the output by entering:
-#
-#   instruction.unpack(load(register(1)))
-#
-# This will give you the value of 1.mem which is pointing to the end of the stack
+# Instructions on the compiler and debugger are in the README.md
+# Or use GitHub https://github.com/grokthis/ucisc-ruby#usage
 
 #== code 0x0000
 

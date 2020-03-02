@@ -9,16 +9,8 @@
 # To run:
 #   $ exe/ucisc examples/factorial.ucisc
 #
-# You will get 3 outputs:
-#   1 - Line numbered output with instructions encoded (label values are all 0)
-#   2 - Final instruction output with address numbers and final label substitutions
-#   3 - Instruction by instruction execution details, including the result "value"
-#
-# When the debugger pauses, get the output by entering:
-#
-#   instruction.unpack(load(register(1)))
-#
-# This will give you the value of 1.mem which is pointing to the end of the stack
+# Instructions on the compiler and debugger are in the README.md
+# Or use GitHub https://github.com/grokthis/ucisc-ruby#usage
 
 #== code 0x0000
 
