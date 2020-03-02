@@ -36,9 +36,6 @@ finish:
   # I really just need a halt/debug instruction...
   0/jump to Entry/                   0.reg/pc/ Entry.disp 0.reg/pc/
 
-one:
-% 0001
-
 # Accepts return : address, n : int
 factorial:
   # factorial(1) == 1
@@ -50,8 +47,8 @@ factorial:
   {
     # Prep n-1
     0/copy n to stack/               1.mem/stack/ 0.imm 1.mem/stack/ 1.inc
-    D/load constant/                 0.reg/pc/ one.imm 2.reg
-    20C/subtract 1 from n on stack/  2.mem/1/ 1.mem/stack/ 0.sign
+    0/load constant/                 4.val 1.imm 6.reg
+    20C/subtract 1 from n on stack/  6.reg/1/ 1.mem/stack/
 
     # factorial(n-1)
     (1.mem/sp/ factorial 1.mem/sp/)
@@ -60,11 +57,11 @@ factorial:
   # multiply n * factorial(n-1), cleanup stack
   {
     # Stack: [factorial(n-1), return address]
-    D/reference factorial(n-1)/      1.reg/stack/ 0.imm 2.reg/factorial(n-1)/
-    D/pop stack/                     1.reg/sp/ 6.imm 1.reg/sp/
+    0/reference factorial(n-1)/      5.reg/stack/ 0.imm 6.reg/factorial(n-1)/
+    0/pop stack/                     5.reg/sp/ 6.imm 5.reg/sp/
 
     # Compute n * factorial(n-1)
-    20E/multiply unsigned/           2.mem/factorial(n-1)/ 1.mem/n on stack/ 0.sign
+    20E/multiply unsigned/           2.mem/factorial(n-1)/ 1.mem/n on stack/
   }
 
   0/jump return/                     1.mem/sp/ 2.imm 0.reg/pc/

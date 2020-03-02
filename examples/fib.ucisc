@@ -45,7 +45,7 @@ fib:
 
   # Recurse for fib(arg-1) and fib(arg-2)
   {
-    0/copy fib(n)/                   1.mem 2.imm 1.mem 1.inc
+    0/copy n/                        1.mem 1.mem 1.inc
 
     0/load 1 into r2/                4.val 1.imm 6.reg/1 constant/
     20C/subtract 1 from n/           6.reg/constant 1/ 1.mem/sp/
@@ -53,7 +53,7 @@ fib:
     (1.mem fib 1.mem)
   }
   {
-    0/copy fib(n)/                   1.mem 8.imm 1.mem 1.inc
+    0/copy n/                        1.mem 6.imm 1.mem 1.inc
 
     0/load 2 into r2/                4.val 2.imm 6.reg/1 constant/
     20C/subtract 2 from n/           6.reg/constant 1/ 1.mem/sp/
