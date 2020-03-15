@@ -27,7 +27,7 @@ class MC
             puts "#{line_number}: #{instruction.label}"
           elsif instruction.instruction?
             @instructions << instruction
-            address += 2
+            address += 1
             puts "#{line_number}: 0x#{instruction.encoded.to_s(16).upcase}" + instruction.original
           elsif instruction.data?
             @instructions << instruction.data
@@ -61,11 +61,11 @@ class MC
         words = []
         @instructions.each do |ins|
           if ins.is_a?(String)
-            address = words.length * 2
-            puts "#{address.to_s(16).upcase}: 0x#{ins.unpack("C*").map { |c| c.to_s(16) }.join}"
+            address = words.length
+            puts "#{address.to_s(16).upcase}: 0x#{ins.unpack("S*").map { |c| c.to_s(16) }.join}"
             words += ins.unpack("S*")
           else
-            address = words.length * 2
+            address = words.length
             puts "#{address.to_s(16).upcase}: 0x#{ins.encoded(@labels, address).to_s(16).upcase}" + ins.original
             words << ins.encoded(@labels, address)
           end
@@ -104,6 +104,12 @@ puts "Reading #{file_name}"
 mc = MC.new(file_name)
 puts "Writing #{file_name}.bin"
 bytes = mc.serialize
+words = bytes.unpack("S*")
+puts "Writing #{file_name}.json for use in EEPROM on CircuitVerse"
+json = "[#{(words + Array.new(256 - words.size).map { 0 }).join(',')}]"
+File.open("#{file_name}.json", 'w') do |file|
+  file.write(json)
+end
 puts "Running program with #{bytes.size} bytes"
 mc.run
 puts "Done."

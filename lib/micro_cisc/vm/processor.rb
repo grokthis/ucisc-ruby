@@ -3,20 +3,18 @@ module MicroCisc
     class Processor
 
       COPY_MASK = 0x80
-      MOVE_MASK = 0xF0
       ALU_MASK = 0xE0
       PAGE_MASK = 0xF0
       CONTROL_MASK = 0xE0
      
       COPY_CODE = 0x00
-      MOVE_CODE = 0xD0
       ALU_CODE = 0x80
       PAGE_CODE = 0xC0
       CONTROL_CODE = 0xE0
 
       def initialize(device_id = 0, mem_bytes = nil)
         @device_id = device_id
-        @local_mem = Array.new(65536).map { 0 }.pack("C*")
+        @local_mem = Array.new(65536).map { 0 }.pack("S*")
         if !mem_bytes.nil?
           max = [65535, mem_bytes.size].min
           @local_mem[0..max] = mem_bytes[0..max]
@@ -67,7 +65,7 @@ module MicroCisc
             count = 0
             byebug if do_command
           end
-          self.pc += 2 unless instruction.pc_modified?
+          self.pc += 1 unless instruction.pc_modified?
         end
       end
 
@@ -82,18 +80,20 @@ module MicroCisc
         if local_address < 0 || local_address > 65535
           raise ArgumentError, "Invalid local address: #{local_address}"
         end
-        if local_address < @local_mem.size - 1
-          @local_mem[local_address..(local_address + 1)]
-        elsif local_address == @local_mem.size - 1
-          (@local_mem[local_address].unpack("C*") + [0]).pack("C*")
-        end
+        # Address is 2 byte boundary
+        start = local_address * 2
+        finish = start + 1
+        @local_mem[start..finish]
       end
 
       def store(local_address, value)
         if local_address < 0 || local_address > 65535
           raise ArgumentError, "Invalid local address: #{local_address}"
         end
-        @local_mem[local_address..(local_address + 1)] = value
+        # Address is 2 byte boundary
+        start = local_address * 2
+        finish = start + 1
+        @local_mem[start..finish] = value
       end
 
       def write_page(page_address, bytes)

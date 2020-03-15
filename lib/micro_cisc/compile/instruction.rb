@@ -3,7 +3,7 @@ module MicroCisc
     class Instruction
       attr_reader :label, :instruction, :data, :imm, :sign, :dir, :reg, :dest, :original, :minimal
 
-      def initialize(label_generator, minimal, original, additional_offset = 0)
+      def initialize(label_generator, minimal, original)
         @label_generator = label_generator
         @original = original
         @label = nil
@@ -13,7 +13,6 @@ module MicroCisc
         @imm = nil
         @reg = nil
         @dest = nil
-        @additional_offset = additional_offset
         parse_ucisc(minimal)
       end
 
@@ -74,9 +73,6 @@ module MicroCisc
           parse('control')
         when 0xC
           parse('page')
-        when 0xD
-          @sign = 1 # Immediate is automatically signed
-          parse('move')
         when 0x200..0x21F
           @alu_code = @opcode & 0x1F
           @opcode = 0x2
@@ -126,10 +122,10 @@ module MicroCisc
             @inc = validate_boolean(parsed, @inc)
           elsif parsed.last == 'eff' && ['alu', 'copy'].include?(@operation)
             @eff = validate_effect(parsed, @eff)
-          elsif (parsed.last == 'disp' || parsed.last == 'imm') && ['copy', 'move'].include?(@operation)
+          elsif (parsed.last == 'disp' || parsed.last == 'imm') && ['copy'].include?(@operation)
             raise ArgumentError, "Duplicate immediate value" if @imm
             if parsed.first.is_a?(Numeric)
-              @imm = parsed.first + @additional_offset
+              @imm = parsed.first
             else
               if parsed.first == 'break'
                 @imm = [@label_generator.end_label, parsed.last]
@@ -154,7 +150,7 @@ module MicroCisc
         @sign ||= 0
         @eff ||= 3
         @inc ||= 0
-        @imm ||= 0 + @additional_offset
+        @imm ||= 0
         if @operation == 'alu'
           if (@inc == 1 || @sign == 0) && @eff > 3
             raise ArgumentError, "Effect must be 0-3 when 1.inc or 0.sign is specified"
@@ -173,13 +169,9 @@ module MicroCisc
       def validate_immediate(value, reg)
         if @operation == 'copy'
           if reg == 4 && (value < -32 || value > 31)
-            raise ArgumentError, "Immediate for copy must be between -64 and 62 instead of 0x#{value}"
-          elsif reg != 4
-            if (value < -64 || value > 63)
-              raise ArgumentError, "Immediate for copy must be between -64 and 62 instead of 0x#{value}"
-            elsif value % 2 == 1
-              raise ArgumentError, "Immediate for copy must be even, not 0x#{value}"
-            end
+            raise ArgumentError, "Immediate for copy must be between -32 and 31 instead of 0x#{value}"
+          elsif reg != 4 && (value < -64 || value > 63)
+            raise ArgumentError, "Immediate for copy must be between -64 and 63 instead of 0x#{value}"
           end
         elsif (@sign.nil? || @sign == 0) && (value < 0x00 || value > 0xFF)
           raise ArgumentError, "Immediate must be between 0x00 and 0xFF instead of 0x#{value.to_s(16).upcase}"
@@ -205,29 +197,24 @@ module MicroCisc
           else
             raise ArgumentError, "Invalid immediate spec: 0x#{@imm.first.to_s(16).upcase}.#{@imm.last}"
           end
-          imm += @additional_offset
           validate_immediate(imm, @reg)
-        elsif ['move', 'copy'].include?(@operation)
+        elsif ['copy'].include?(@operation)
           raise ArgumentError, "Unexpected immediate: #{@imm}"
         end
 
         if @operation == 'copy'
           # 0EEDDDRR RMIIIIII
-          if @reg == 4
+          if [1, 2, 3].include?(@reg)
             imm = imm & 0x3F
           else
-            imm = (imm & 0x7F) >> 1
+            imm = imm & 0x7F
           end
           msb = (@eff << 5) | (@dest << 2) | (@reg >> 1)
           ((msb & 0xFF) << 8) | ((@reg & 0x01) << 7) | (@inc << 6) | imm
-        elsif @operation == 'move'
-          # 1101DDRR IIIIIIII
-          msb = 0xD0 | (@dest << 2) | @reg
-          ((msb & 0xFF) << 8) | ((imm & 0x1FF) >> 1)
         elsif @operation == 'alu'
-          # 10SDDRRR MAAAAAEE
-          msb = 0x80 | (@sign << 5) | (@dest << 3) | @reg
-          lsb = (@inc << 7) | (@alu_code << 2) | @eff % 4
+          # 10SMDDRR RAAAAAEE
+          msb = 0x80 | (@sign << 5) | (@inc << 4) | (@dest << 2) | (@reg >> 1)
+          lsb = ((@reg & 0x01) << 7) | (@alu_code << 2) | @eff % 4
           ((msb & 0xFF) << 8) | (lsb & 0xFF)
         end
       end
@@ -245,9 +232,7 @@ module MicroCisc
 
       def validate_reg(arg)
         valid = false
-        if @operation == 'move'
-          valid = [0, 1, 2, 3].include?(arg.first) && arg.last == 'reg'
-        elsif @operation == 'alu'
+        if @operation == 'alu'
           valid = arg.first == 0 && arg.last == 'reg'
           valid = valid || [1, 2, 3].include?(arg.first) && arg.last == 'mem'
           valid = valid || [4, 5, 6, 7].include?(arg.first) && arg.last == 'reg'
@@ -266,9 +251,7 @@ module MicroCisc
       end
 
       def validate_dest(arg)
-        if @operation == 'move'
-          valid = (arg.last == 'reg' && [0, 1, 2, 3].include?(arg.first))
-        elsif @operation == 'copy'
+        if @operation == 'copy'
           valid = arg.last == 'mem' && [1, 2, 3].include?(arg.first)
           valid = valid || arg.last == 'reg' && [0, 4, 5, 6, 7].include?(arg.first)
         elsif @operation == 'alu'

@@ -3,13 +3,11 @@ module MicroCisc
     class Instruction
 
       COPY_MASK = 0x80
-      MOVE_MASK = 0xF0
       ALU_MASK = 0xC0
       PAGE_MASK = 0xF0
       CONTROL_MASK = 0xE0
      
       COPY_CODE = 0x00
-      MOVE_CODE = 0xD0
       ALU_CODE = 0x80
       PAGE_CODE = 0xC0
       CONTROL_CODE = 0xE0
@@ -43,8 +41,6 @@ module MicroCisc
 
         if msb & COPY_MASK == COPY_CODE
           do_copy
-        elsif msb & MOVE_MASK == MOVE_CODE
-          do_move
         elsif msb & ALU_MASK == ALU_CODE
           do_alu
         elsif msb & PAGE_MASK == PAGE_CODE
@@ -62,19 +58,29 @@ module MicroCisc
         msb = @instruction[0]
         lsb = @instruction[1]
 
+        # 0EEDDDRR RCIIIIII
         destination = (msb & 0x1C) >> 2
         source = ((msb & 0x03) << 1) | (lsb >> 7)
         effect = (msb & 0x60) >> 5
         increment = (lsb & 0x40) >> 6 == 1
-        shift = source == 4 ? 0 : 1
 
         if lsb & 0x20 > 0
-          # negative 6 digit value, with inferred 7th digit (0)
-          # sign extend by repacking and unpacking as signed
-          immediate = [(lsb & 0x3F | 0xC0) << shift].pack("C*").unpack("c*").first
+          if [1, 2, 3].include?(destination)
+            # Sign extend 6 digit value, memory target
+            immediate = [(lsb & 0x3F) | 0xC0].pack("C*").unpack("c*").first
+          else
+            # Sign extend 7 digit value, register target, C is imm value
+            immediate = [(lsb & 0x7F) | 0x80].pack("C*").unpack("c*").first
+          end
         else
           # positive value
-          immediate = (lsb & 0x3F) << shift
+          if [1, 2, 3].include?(destination)
+            # 6 digit value
+            immediate = (lsb & 0x3F)
+          else
+            # 7 digit value, register target, C is imm value
+            immediate = (lsb & 0x7F)
+          end
         end
 
         store =
@@ -100,53 +106,27 @@ module MicroCisc
             processor.pc = value
             @pc_modified = true
           elsif destination < 4
-            processor.set_register(destination, processor.register(destination) - 2) if increment
+            increment(destination, 1) if increment
             store(processor.register(destination), pack(value))
           elsif destination == 4
             processor.flags
           elsif destination > 4
             processor.set_register(destination - 4, value)
           end
-          if increment && source != destination && [1, 2, 3].include?(source)
-            processor.set_register(source, processor.register(source) - 2)
-          end
         end
         "0x0 R: #{source}, D: #{destination}, E: #{effect}, M: #{increment}, I: #{immediate}, value: #{value}, #{'skipping ' if !store}store"
-      end
-
-      def do_move
-        msb = @instruction[0]
-
-        destination = (msb & 0xC) / 4
-        source = msb & 0x03
-        shift = source == 4 ? 0 : 1
-        immediate = [@instruction[1] << shift].pack("C").unpack("c").first
-
-        value =
-          if source == 0
-            (processor.pc & 0xFF00) | immediate
-          else
-            processor.register(source) + immediate
-          end
-
-        if destination == 0
-          processor.pc = value
-          @pc_modified = true
-        else
-          processor.set_register(destination, value)
-        end
-        "0xD D: #{destination}, R: #{source}, IMM: #{immediate}, value: #{value}"
       end
 
       def do_alu
         msb = @instruction[0]
         lsb = @instruction[1]
 
+        # 10SMDDRR RAAAAAEE
         sign = (msb & 0x20) / 32
-        destination = (msb & 0x18) / 8
-        source = msb & 0x07
-        increment = (lsb & 0x80) > 0
-        alu_code = (lsb & 0x7C) / 4
+        increment = (msb & 0x10) > 0
+        destination = (msb & 0x0C) >> 2
+        source = ((msb & 0x03) << 1) | (lsb >> 7)
+        alu_code = (lsb & 0x7C) >> 2
         effect = lsb & 0x03
 
         arg1 =
@@ -200,7 +180,7 @@ module MicroCisc
 
       def increment(r, sign)
         return if r < 1 || r > 3
-        delta = sign ? -2 : 2
+        delta = sign ? -1 : 1
         processor.set_register(r, processor.register(r) + delta)
       end
 
@@ -209,7 +189,7 @@ module MicroCisc
       end
 
       def carry_flag
-        (processor.flags >> 3) & 0x01
+        (processor.flags >> 1) & 0x01
       end
 
       def negative_flag
@@ -280,6 +260,8 @@ module MicroCisc
         elsif alu_code == 0x12
           value = arg1 % arg2
           value = value & 0xFFFF
+        else
+          raise ArgumentError, "Unsupported ALU code #{alu_code.to_s(16).upcase}"
         end
 
         zero = value == 0 ? 1 : 0
@@ -292,14 +274,15 @@ module MicroCisc
       end
 
       def unpack(word, signed = false)
-        bytes = word.unpack("C*")
-        value = bytes[0] * 256 + bytes[1]
-        value = value.pack("S*").unpack("s*") if signed
-        value
+        if signed
+          word.unpack("s*").first
+        else
+          word.unpack("S*").first
+        end
       end
       
       def pack(value)
-        [(value & 0xFF00) >> 8, value & 0x00FF].pack("C*")
+        [value & 0xFFFF].pack("S*")
       end
 
       def halt
