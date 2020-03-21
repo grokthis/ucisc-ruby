@@ -38,7 +38,7 @@ The `ucisc` command combines the compilation and VM execution.
 
 ```
 # Run the factorial example
-$ exe/ucisc examples/factorial.ucisc
+$ exe/ucisc examples/fib.ucisc
 ```
 
 You will get 3 outputs:
@@ -46,14 +46,25 @@ You will get 3 outputs:
 2. Final instruction output with address numbers and final label substitutions
 3. Instruction by instruction execution details, including the result "value"
 
-Example line numbers:
+This code:
 
 ```
-18: Entry
-20: 0x763F  0/load 0xFFFF to sp/    4.val -1.imm 5.reg
-22: 0x6443  0 0.reg 6.imm 1.mem 1.inc 3.eff #   (1.mem fib 4.val 8.imm)
-22: 0x6648  0 4.val 8.imm 1.mem 1.inc 3.eff #   (1.mem fib 4.val 8.imm)
-22: 0x6000  0 0.reg fib.disp 0.reg 0.inc 3.eff #   (1.mem fib 4.val 8.imm)
+...
+13: Entry:
+14:   # Initialize the stack register to 0x0000, decrement on push will change to 0xFFFF
+15:   0/load 0xFFFF to sp/               4.val 0.imm 1.reg
+16:
+17:   (1.mem fib 4.val 8.imm)
+...
+```
+Gets translated into these instructions:
+
+```
+13: Entry
+15: 0x7600  0/load 0xFFFF to sp/               4.val 0.imm 1.reg
+17: 0x6443  0 0.reg 3.imm 1.mem 1.push #   (1.mem fib 4.val 8.imm)
+17: 0x6648  0 4.val 8.imm 1.mem 1.push #   (1.mem fib 4.val 8.imm)
+17: 0x6000  0 0.reg fib.disp 0.reg #   (1.mem fib 4.val 8.imm)
 ...
 ```
 
@@ -74,6 +85,7 @@ something like this:
 2: 0x6443  0 0.reg 6.imm 1.mem 1.inc 3.eff #   (1.mem fib 4.val 8.imm)
 4: 0x6648  0 4.val 8.imm 1.mem 1.inc 3.eff #   (1.mem fib 4.val 8.imm)
 6: 0x6002  0 0.reg fib.disp 0.reg 0.inc 3.eff #   (1.mem fib 4.val 8.imm)
+...
 ```
 
 The line numbers are now the hex memory address of the
@@ -86,28 +98,66 @@ and give you a prompt.
 
 ```
 Running program with 60 bytes
-Jump 0x000 detected...
-Finished 929 instructions in 0.010282s
-> _
+Starting program... (enter to continue)
+0000 0x0 4.val 0x0 1.reg 3.eff 0.push # value: 0, stored > _
 ```
-
 You can see the compiled program is 60 bytes total including any
-data and instructions encoded. In this case, 929 instructions
-were executed.
+data and instructions encoded. The program is loaded and ready to
+execute at this point. The last line shows the instruction that is
+about to be executed. Press [enter] to continue and run the
+program to completion.
+
+```
+Breaking on jump to 0x0000...
+Finished 929 instructions in 0.001835s
+0000 0x0 4.val 0x0 1.reg 3.eff 0.push # value: 0, stored > _
+```
+When the program jumps to address 0x0000, the program pauses. In
+this case, 929 instructions were executed in 0.001835s. Performance
+will depend on your ruby version, computer performance and program.
+I've seen up to 6x the performance of the 8-bit computers of the
+early 80's when running on modern CPU's, so that gives you an idea
+of what types of algorithms you can run.
 
 At the prompt, you can do the following:
 
 * Type "exit" - exits the VM
 * Type "break" - opens the ruby debugger. You can inspect the
   memory and registers from here if desired.
-* Simply hit "enter" and the execution will continue
+* "next", "n" - Turn debug mode on and step to the next instruction.
+* "continue", "c" - Turn debug mode off and continue execution
+* Simply hit "enter" and the execution will continue. If in debug
+  mode, it will execute the instruction and move to the next. If
+  not debugging it will continue running until the next jump 0x0000.
 
 When in the ruby debugger, you can do the following to look at
 the stack value:
 
 ```
-# Dereference register 1 and unpack the value
-instruction.unpack(load(register(1)))
+# Load a value from memory; returns 16-bit word
+# Returns nil if the address is out of memory bounds
+load(address)
+
+# Look at the contents of a register; number is 1-3
+# Returns 16-bit register value
+register(number)
+
+# PC contents
+pc
+
+# Flags register
+flags
+
+# Values are show in decimal, conver to hex with:
+pc.to_s(16).upcase
+
+# To continue execution (any byebug commands are available)
+# https://github.com/deivid-rodriguez/byebug
+continue
+
+# Combine as needed
+# Look at the stack: load the address in r1
+load(register(1)).to_s(16).upcase
 ```
 
 ## Debugging
@@ -123,26 +173,29 @@ Instead of simply executing all the code, the debugger will
 pause after each instruction:
 
 ```
-Running program with 60 bytes
-0000 0x0 R: 4, D: 5, E: 3, M: false, I: -1, value: -1, store > 
-0002 0x0 R: 0, D: 1, E: 3, M: true, I: 6, value: 8, store > 
-0004 0x0 R: 4, D: 1, E: 3, M: true, I: 8, value: 8, store > 
-0006 0x0 R: 0, D: 0, E: 3, M: false, I: 4, value: 10, store > 
-000a 0x202 R: 1, D: 1, Sign: 1, Inc: false, Eff: 3, value: 8, skipping store > 
-000c 0x0 R: 0, D: 0, E: 1, M: false, I: 4, value: 16, store > 
+0000 0x0 4.val 0x0 1.reg 3.eff 0.push # value: 0, stored >
+0001 0x0 0.reg 0x3 1.mem 3.eff 1.push # value: 4, stored >
+0002 0x0 4.val 0x8 1.mem 3.eff 1.push # value: 8, stored >
+0003 0x0 0.reg 0x2 0.reg 3.eff 0.push # value: 5, stored >
+0005 0x202 1.mem 1.mem 0.inc 1.sign 3.eff # arg1: 8, arg2: 8, result 8, not stored >
+0006 0x0 0.reg 0x2 0.reg 1.eff 0.push # value: 8, stored >
+0008 0x0 4.val 0x1 2.reg 3.eff 0.push # value: 1, stored >
+0009 0x20c 2.reg 1.mem 0.inc 1.sign 3.eff # arg1: 1, arg2: 8, result 7, not stored >
+000a 0x0 0.reg 0x2 0.reg 1.eff 0.push # value: 12, stored >
+000c 0x0 1.mem 0x0 1.mem 3.eff 1.push # value: 8, stored > _
 ```
 
 Notice the prompt after each instruction. The same break, exit
 or "enter" options are available as described above. The output
-lists the component parts of the instruction as decoded. The
-value is the value that was moved, manipulated or calculated.
-The final "store" or "skipping store" indicates if the value
-was actually saved to the destination or not (depending on the
-effect modifier).
+at each line is the uCISC equivalent of what was executed.
+After the comment, the value result and whether or not the value
+was stored is indicated. ALU instructions also include both args
+in the comment.
 
 Note the 4-digit hex address to the left. That is the address
 of the instruction that was executed and will match the compiled
-output (assuming your code doesn't overwrite itself).
+output (assuming your code doesn't overwrite itself or load code
+to other memory locations).
 
 ## Development
 

@@ -104,11 +104,11 @@ puts "Reading #{file_name}"
 mc = MC.new(file_name)
 puts "Writing #{file_name}.bin"
 words = mc.serialize
-puts "Writing #{file_name}.json for use in EEPROM on CircuitVerse"
-json = "[#{(words + Array.new(256 - words.size).map { 0 }).join(',')}]"
-File.open("#{file_name}.json", 'w') do |file|
-  file.write(json)
-end
+#puts "Writing #{file_name}.json for use in EEPROM on CircuitVerse"
+#json = "[#{(words + Array.new(256 - words.size).map { 0 }).join(',')}]"
+#File.open("#{file_name}.json", 'w') do |file|
+#  file.write(json)
+#end
 puts "Running program with #{words.size * 2} bytes"
 mc.run
 puts "Done."
