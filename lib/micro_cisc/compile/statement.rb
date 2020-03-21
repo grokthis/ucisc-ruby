@@ -34,14 +34,14 @@ module MicroCisc
         stack = match['stack']
         args = match['args'].split(',').map(&:strip)
 
-        instruction = "0 0.reg #{args.size + 2}.imm #{stack} 1.inc"
+        instruction = "0 0.reg #{args.size + 2}.imm #{stack} 1.push"
         return_address = Instruction.new(@label_generator, instruction, "  #{instruction} # #{original}")
         stack_delta = 1
         args = args.reverse.map.each do |arg|
           is_stack = arg.start_with?(stack)
           offset = (is_stack ? stack_delta : 0)
           offset_immediate = offset > 0 ? "#{offset.to_s(16).upcase}.imm " : ''
-          instruction = "0 #{arg} #{offset_immediate}#{stack} 1.inc"
+          instruction = "0 #{arg} #{offset_immediate}#{stack} 1.push"
           stack_delta += 1
           Instruction.new(@label_generator, instruction, "  #{instruction} # #{original}")
         end

@@ -1,41 +1,46 @@
 module MicroCisc
   module Vm
+    # Many of the coding decisions made in the Vm classes are for performance reasons:
+    #
+    # 1. Static instruction classes, less object oriented encapsulation
+    # 2. More verbose programming style
+    # 3. Optimized/strange bitwise math
+    # 4. Some strange branching structures to shortcut common paths
+    # 5. Few accessor methods
+    # 6. Little runtime error checking
+    #
+    # Performance isn't a deal breaker, but 0.94 MIPS seems much better than the
+    # 0.11 MIPS I was getting before (on my 7 year old MacBook Pro). Roughly speaking
+    # that gives me about 2x the MIPS of an original 6502 which puts me in the ball
+    # park of where I need to be to do some real programming. We just want something
+    # reasonable for debuging and doing some real coding, actual hardware will leave
+    # this in the dust as the FPGAs I'm eyeing will be 100x or more.
     class Processor
+      OPCODES = [
+        CopyInstruction,
+        CopyInstruction,
+        AluInstruction,
+        nil
+      ]
 
-      COPY_MASK = 0x80
-      ALU_MASK = 0xE0
-      PAGE_MASK = 0xF0
-      CONTROL_MASK = 0xE0
-     
-      COPY_CODE = 0x00
-      ALU_CODE = 0x80
-      PAGE_CODE = 0xC0
-      CONTROL_CODE = 0xE0
+      attr_accessor :flags, :pc, :debug
 
       def initialize(device_id = 0, mem_bytes = nil)
         @device_id = device_id
-        @local_mem = Array.new(65536).map { 0 }.pack("S*")
+        @local_mem = Array.new(65536).map { 0 }
         if !mem_bytes.nil?
           max = [65535, mem_bytes.size].min
           @local_mem[0..max] = mem_bytes[0..max]
         end
-        @registers = [0, 0, 0, 0, 0]
-      end
-
-      def flags
-        @registers[4]
-      end
-
-      def flags=(value)
-        @registers[4] = value & 0xFFFF
-      end
-
-      def pc
-        @registers[0]
+        @registers = [0, 0, 0, 0]
+        @pc = 0
+        @flags = 0
+        @debug = false
       end
 
       def pc=(value)
-        @registers[0] = value & 0xFFFF
+        @pc_modified = true
+        @pc = value & 0xFFFF
       end
 
       def register(id)
@@ -43,29 +48,39 @@ module MicroCisc
       end
 
       def set_register(id, value)
-        @registers[id] = value & 0xFFFF
+        @registers[id] = value
       end
 
-      def run(debug = false)
+      def run
+        word = load(@pc)
+        directive = OPCODES[(word & 0xC000) >> 14]
+        puts 'Starting program... (enter to continue)'
+        do_command("#{'%04x' % [@pc]} #{directive.ucisc(self, word)} ")
         t0 = Time.now
         count = 0
         while(true) do
           count += 1
-          instruction = load(pc).unpack("S*").first
-          instruction = Instruction.new(self, instruction)
-          before = self.pc
-          result = instruction.exec
-          if debug
-            byebug if do_command("#{'%04x' % [before]} #{result} ")
+          word = load(@pc)
+          directive = OPCODES[(word & 0xC000) >> 14]
+          do_break = directive.exec(self, word)
+          if @pc_modified
+            @pc_modified = false
+          else
+            @pc += 1
           end
-          if instruction.pc_modified? && self.pc == 0
-            delta = (Time.now - t0)
-            puts "Jump 0x000 detected..."
-            puts "Finished #{count} instructions in #{delta}s"
-            count = 0
-            byebug if do_command
+          if do_break || @debug
+            if @pc == 0 && count > 1
+              delta = (Time.now - t0)
+              puts "Breaking on jump to 0x0000..."
+              puts "Finished #{count} instructions in #{delta}s"
+              count = 0
+            end
+            # Pause before executing next command
+            word = load(@pc)
+            directive = OPCODES[(word & 0xC000) >> 14]
+            do_command("#{'%04x' % [@pc]} #{directive.ucisc(self, load(@pc))} ")
+            t0 = Time.now
           end
-          self.pc += 1 unless instruction.pc_modified?
         end
       end
 
@@ -73,39 +88,29 @@ module MicroCisc
         $stdout.print "#{prefix}> "
         command = $stdin.readline
         exit(1) if /exit/.match(command)
-        true if /break/.match(command)
+        byebug if /break/.match(command)
+        @debug = true if /debug|n|next/.match(command)
+        @debug = false if /c|continue/.match(command)
       end
 
       def load(local_address)
-        if local_address < 0 || local_address > 65535
-          raise ArgumentError, "Invalid local address: #{local_address}"
-        end
-        # Address is 2 byte boundary
-        start = local_address * 2
-        finish = start + 1
-        @local_mem[start..finish]
+        @local_mem[local_address]
       end
 
       def store(local_address, value)
-        if local_address < 0 || local_address > 65535
-          raise ArgumentError, "Invalid local address: #{local_address}"
-        end
-        # Address is 2 byte boundary
-        start = local_address * 2
-        finish = start + 1
-        @local_mem[start..finish] = value
+        @local_mem[local_address] = value
       end
 
-      def write_page(page_address, bytes)
+      def write_page(page_address, words)
         if page_address < 0 || page_address > 255
           raise ArgumentError, "Invalid page address: #{page_address}, expect 0 <= page address <= 255"
         end
-        if bytes.size != 256
+        if words.size != 256
           raise ArgumentError, "Page must be 256 bytes"
         end
         start = page_address * 256
         finish = start + 256
-        @local_mem[start..finish] = bytes
+        @local_mem[start..finish] = words
       end
 
       def read_page(page_address)
@@ -119,4 +124,3 @@ module MicroCisc
     end
   end
 end
-

@@ -118,7 +118,9 @@ module MicroCisc
             args << parsed
           elsif parsed.last == 'sign' && ['alu'].include?(@operation)
             @sign = validate_boolean(parsed, @sign)
-          elsif parsed.last == 'inc' && ['alu', 'copy'].include?(@operation)
+          elsif parsed.last == 'inc' && ['alu'].include?(@operation)
+            @inc = validate_boolean(parsed, @inc)
+          elsif parsed.last == 'push' && ['copy'].include?(@operation)
             @inc = validate_boolean(parsed, @inc)
           elsif parsed.last == 'eff' && ['alu', 'copy'].include?(@operation)
             @eff = validate_effect(parsed, @eff)
@@ -235,16 +237,18 @@ module MicroCisc
         if @operation == 'alu'
           valid = arg.first == 0 && arg.last == 'reg'
           valid = valid || [1, 2, 3].include?(arg.first) && arg.last == 'mem'
-          valid = valid || [4, 5, 6, 7].include?(arg.first) && arg.last == 'reg'
+          valid = valid || [4, 1, 2, 3].include?(arg.first) && arg.last == 'reg'
         elsif @operation == 'copy'
           valid = arg.first == 0 && arg.last == 'reg'
           valid = valid || [1, 2, 3].include?(arg.first) && arg.last == 'mem'
           valid = valid || arg.first == 4 && arg.last == 'val'
-          valid = valid || [5, 6, 7].include?(arg.first) && arg.last == 'reg'
+          valid = valid || [1, 2, 3].include?(arg.first) && arg.last == 'reg'
         end
 
         if valid
-          arg.first
+          reg = arg.first
+          reg += 4 if [1, 2, 3].include?(arg.first) && arg.last == 'reg'
+          reg
         else
           raise ArgumentError, "Invalid register value: 0x#{arg.first.to_s(16).upcase}.#{arg.last}"
         end
@@ -253,13 +257,15 @@ module MicroCisc
       def validate_dest(arg)
         if @operation == 'copy'
           valid = arg.last == 'mem' && [1, 2, 3].include?(arg.first)
-          valid = valid || arg.last == 'reg' && [0, 4, 5, 6, 7].include?(arg.first)
+          valid = valid || arg.last == 'reg' && [0, 4, 1, 2, 3].include?(arg.first)
         elsif @operation == 'alu'
           valid = arg.last == 'mem' && [1, 2, 3].include?(arg.first)
           valid = valid || arg.last == 'reg' && arg.first == 0
         end
         if valid
-          arg.first
+          reg = arg.first
+          reg += 4 if [1, 2, 3].include?(arg.first) && arg.last == 'reg'
+          reg
         else
           raise ArgumentError, "Invalid destination value: 0x#{arg.first.to_s(16).upcase}.#{arg.last}"
         end
