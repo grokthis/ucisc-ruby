@@ -8,3 +8,6 @@
 /tmp/
 /.byebug_history
 *.swp
+
+# video system create screen.png, ignore it
+screen.png

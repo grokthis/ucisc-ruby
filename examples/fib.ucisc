@@ -2,12 +2,17 @@
 #
 # By default, computes fib(8) == 21. Change the imm on line 24
 # to compute other numbers. fib(0x18) is the maximum value that
-# will compute correctly. fib(0x19) and up will overflow 16-bits.
+# will compute correctly. fib(0x19) and up will overflow 16-bits
+# when adding the final result, but will execute an equivalent
+# number of instructions.
 #
 # To run:
 #   $ exe/ucisc examples/fib.ucisc
 #
-# Instructions on the compiler and debugger are in the README.md
+# Type 'break' when you hit the breakpoint, then `load(register(1))`
+# to view the result on the stack
+#
+# More instructions on the compiler and debugger are in the README.md
 # Or use GitHub https://github.com/grokthis/ucisc-ruby#usage
 
 Entry:
@@ -16,10 +21,7 @@ Entry:
 
   (1.mem fib 4.val 8.imm)
 
-finish:
-
-  # The prototype VM pops into the debugger if you ever jump to 0x0000
-  0/Jump to Entry/                   0.reg/pc/ Entry.disp 0.reg/pc/
+  200/Debug breakpoint/              0.reg/pc/ 0.reg/pc/
 
 fib:
   # fib(0) == 0

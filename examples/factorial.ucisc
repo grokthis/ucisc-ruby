@@ -9,8 +9,12 @@
 # To run:
 #   $ exe/ucisc examples/factorial.ucisc
 #
-# Instructions on the compiler and debugger are in the README.md
+# Type 'break' when you hit the breakpoint, then `load(register(1))`
+# to view the result on the stack
+#
+# More instructions on the compiler and debugger are in the README.md
 # Or use GitHub https://github.com/grokthis/ucisc-ruby#usage
+
 
 Entry:
   # Initialize the stack register to 0x0000, decrement on push will change to 0xFFFF
@@ -19,10 +23,7 @@ Entry:
   # Call factorial
   (1.mem factorial 4.val 6.imm)
 
-finish:
-
-  # The prototype VM pops into the debugger if you ever jump to 0x0000
-  0/jump to Entry/                   0.reg/pc/ Entry.disp 0.reg/pc/
+  200/Debug break point/             0.reg/pc/ 0.reg/pc/
 
 factorial:
   # factorial(1) == 1

@@ -52,15 +52,20 @@ module MicroCisc
 
         if @components.first == '%'
           @components.shift
-          hex = @components.join
-          if hex.length % 4 != 0
-            raise ArgumentError, "Data segment has an odd number of hex value, byte data incomplete"
+          @data = @components.map do |component|
+            if match = /(?<name>[^\s]+)\.(?<type>imm|disp)/.match(component)
+              [match['name'], match['type']]
+            else
+              if component.length % 4 != 0
+                raise ArgumentError, "Data segment length must be a multiple of 2-bytes"
+              end
+              words = []
+              (0...(component.length / 4)).each do |index|
+                words << ((component[index * 4, 4]).to_i(16) & 0xFFFF)
+              end
+              words.pack("S*")
+            end
           end
-          bytes = []
-          (0...(hex.length / 2)).each do |index|
-            bytes << ((hex[index * 2, 2]).to_i(16) & 0xFF)
-          end
-          @data = bytes.pack("C*")
           return
         end
 
@@ -71,7 +76,7 @@ module MicroCisc
           parse('copy')
         when 0x7
           parse('control')
-        when 0xC
+        when 0x6
           parse('page')
         when 0x200..0x21F
           @alu_code = @opcode & 0x1F
@@ -105,6 +110,18 @@ module MicroCisc
         component.first
       end
 
+      def validate_page_dir(component, current)
+        raise ArgumentError, "Duplicate #{component.last} value" if current
+        if component.first > 1 || component.first < 0
+          raise ArgumentError, "Invalid page direction: #{component.first}"
+        end
+        if (component.first == 0 && component.last != 'out') ||
+            (component.first == 1 && component.last != 'in')
+          raise ArgumentError, "Invalid value #{component.first} for #{component.last}"
+        end
+        component.first
+      end
+
       def parse(operation)
         @operation = operation
         components = @components[1..-1]
@@ -114,7 +131,7 @@ module MicroCisc
         while components.size > 0
           to_parse = components.shift
           parsed = parse_component(to_parse)
-          if ['val', 'reg', 'mem'].include?(parsed.last)
+          if ['val', 'reg', 'mem', 'xmem'].include?(parsed.last)
             args << parsed
           elsif parsed.last == 'sign' && ['alu'].include?(@operation)
             @sign = validate_boolean(parsed, @sign)
@@ -124,6 +141,10 @@ module MicroCisc
             @inc = validate_boolean(parsed, @inc)
           elsif parsed.last == 'eff' && ['alu', 'copy'].include?(@operation)
             @eff = validate_effect(parsed, @eff)
+          elsif ['in', 'out'].include?(parsed.last) && ['page'].include?(@operation)
+            @page_dir = validate_page_dir(parsed, @page_dir)
+          elsif parsed.last == 'lock' && ['page'].include?(@operation)
+            @lock = validate_boolean(parsed, @lock)
           elsif (parsed.last == 'disp' || parsed.last == 'imm') && ['copy'].include?(@operation)
             raise ArgumentError, "Duplicate immediate value" if @imm
             if parsed.first.is_a?(Numeric)
@@ -159,6 +180,12 @@ module MicroCisc
           elsif @inc == 0 && @sign == 1 && @eff < 4
             raise ArgumentError, "Effect must be 4-7 when 0.inc and 0.sign is specified"
           end
+        elsif @operation == 'page'
+          if @page_dir.nil?
+            raise ArgumentError, "Expecting page direction (0.out or 1.in)"
+          elsif @lock.nil?
+            raise ArgumentError, "Expecting lock action for page"
+          end
         end
         if @imm.is_a?(Numeric)
           validate_immediate(@imm, args.first.first)
@@ -175,10 +202,8 @@ module MicroCisc
           elsif reg != 4 && (value < -64 || value > 63)
             raise ArgumentError, "Immediate for copy must be between -64 and 63 instead of 0x#{value}"
           end
-        elsif (@sign.nil? || @sign == 0) && (value < 0x00 || value > 0xFF)
-          raise ArgumentError, "Immediate must be between 0x00 and 0xFF instead of 0x#{value.to_s(16).upcase}"
-        elsif @sign == 1 && (value < -256 || value > 254)
-          raise ArgumentError, "Immediate must be between -256 and 254 instead of 0x#{value}"
+        elsif @operation == 'page' && (value < -32 || value > 31)
+          raise ArgumentError, "Immediate for page must be between -32 and 31 instead of 0x#{value}"
         end
       end
 
@@ -195,13 +220,11 @@ module MicroCisc
           if @imm.last == 'disp'
             imm = label_address - current_address
           elsif @imm.last == 'imm'
-            imm = label_address & 0xFF
+            imm = label_address & 0xFFFF
           else
             raise ArgumentError, "Invalid immediate spec: 0x#{@imm.first.to_s(16).upcase}.#{@imm.last}"
           end
           validate_immediate(imm, @reg)
-        elsif ['copy'].include?(@operation)
-          raise ArgumentError, "Unexpected immediate: #{@imm}"
         end
 
         if @operation == 'copy'
@@ -217,6 +240,11 @@ module MicroCisc
           # 10SMDDRR RAAAAAEE
           msb = 0x80 | (@sign << 5) | (@inc << 4) | (@dest << 2) | (@reg >> 1)
           lsb = ((@reg & 0x01) << 7) | (@alu_code << 2) | @eff % 4
+          ((msb & 0xFF) << 8) | (lsb & 0xFF)
+        elsif @operation == 'page'
+          # 110NLLPP PKIIIIII
+          msb = 0xC0 | (@page_dir << 4) | (@dest << 2) | (@reg >> 1)
+          lsb = ((@reg & 0x01) << 7) | (@lock << 6) | (imm & 0x3F)
           ((msb & 0xFF) << 8) | (lsb & 0xFF)
         end
       end
@@ -236,18 +264,22 @@ module MicroCisc
         valid = false
         if @operation == 'alu'
           valid = arg.first == 0 && arg.last == 'reg'
-          valid = valid || [1, 2, 3].include?(arg.first) && arg.last == 'mem'
-          valid = valid || [4, 1, 2, 3].include?(arg.first) && arg.last == 'reg'
+          valid = valid || ([1, 2, 3].include?(arg.first) && arg.last == 'mem')
+          valid = valid || ([4, 1, 2, 3].include?(arg.first) && arg.last == 'reg')
         elsif @operation == 'copy'
           valid = arg.first == 0 && arg.last == 'reg'
-          valid = valid || [1, 2, 3].include?(arg.first) && arg.last == 'mem'
-          valid = valid || arg.first == 4 && arg.last == 'val'
-          valid = valid || [1, 2, 3].include?(arg.first) && arg.last == 'reg'
+          valid = valid || ([1, 2, 3].include?(arg.first) && arg.last == 'mem')
+          valid = valid || (arg.first == 4 && arg.last == 'val')
+          valid = valid || ([1, 2, 3].include?(arg.first) && arg.last == 'reg')
+        elsif @operation == 'page'
+          valid = [1, 2, 3].include?(arg.first) && arg.last == 'mem'
+          valid = valid || (arg.first == 4 && arg.last == 'val')
+          valid = valid || ([1, 2, 3].include?(arg.first) && arg.last == 'xmem')
         end
 
         if valid
           reg = arg.first
-          reg += 4 if [1, 2, 3].include?(arg.first) && arg.last == 'reg'
+          reg += 4 if [1, 2, 3].include?(arg.first) && ['reg', 'xmem'].include?(arg.last)
           reg
         else
           raise ArgumentError, "Invalid register value: 0x#{arg.first.to_s(16).upcase}.#{arg.last}"
@@ -257,10 +289,13 @@ module MicroCisc
       def validate_dest(arg)
         if @operation == 'copy'
           valid = arg.last == 'mem' && [1, 2, 3].include?(arg.first)
-          valid = valid || arg.last == 'reg' && [0, 4, 1, 2, 3].include?(arg.first)
+          valid = valid || (arg.last == 'reg' && [0, 4, 1, 2, 3].include?(arg.first))
         elsif @operation == 'alu'
           valid = arg.last == 'mem' && [1, 2, 3].include?(arg.first)
-          valid = valid || arg.last == 'reg' && arg.first == 0
+          valid = valid || (arg.last == 'reg' && arg.first == 0)
+        elsif @operation == 'page'
+          valid = arg.last == 'mem' && [1, 2, 3].include?(arg.first)
+          valid = valid || (arg.last == 'blank' && arg.first == 0)
         end
         if valid
           reg = arg.first

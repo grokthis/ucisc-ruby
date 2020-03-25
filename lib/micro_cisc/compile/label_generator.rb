@@ -1,37 +1,47 @@
 module MicroCisc
   module Compile
     class LabelGenerator
-      def initialize(default_context)
-        @default_context = default_context
+      def initialize
         @labels = []
         @count = 0
       end
 
-      def push_context(prefix = @default_context)
-        @labels << prefix
+      def push_context
+        @count += 1
+        @labels << "{#{@count}"
       end
 
-      def pop_context(prefix = @default_context)
-        if !@labels.rindex(prefix)
-          raise ArgumentException, "Context #{prefix} is invalid."
-        end
-        @labels[@labels.rindex(prefix)] = "-#{prefix}"
+      def pop_context
+        @labels << last_open.sub('{', '}')
       end
 
       def end_label
-        if @labels.empty?
-          raise ArgumentException, "No open label context"
-        end
-        count = @labels.size.to_s(16).upcase
-        "}-#{@labels.last}:#{count}"
+        last_open.sub('{', '}')
       end
 
       def start_label
+        last_open
+      end
+
+      def last_open
         if @labels.empty?
           raise ArgumentException, "No open label context"
         end
-        count = @labels.size.to_s(16).upcase
-        "{-#{@labels.last}:#{count}"
+        # Go backwards until we find an open that we didn't see the close for first
+        i = @labels.size - 1
+        closed = nil
+        while(i >= 0)
+          if @labels[i].start_with?('}')
+            closed = @labels[i]
+          elsif !closed
+            return @labels[i]
+          elsif closed && @labels[i].end_with?(closed[1..-1])
+            closed = nil
+          else
+            raise 'Invalid state, contexts are out of order'
+          end
+          i -= 1
+        end
       end
     end
   end

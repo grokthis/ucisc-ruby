@@ -1,34 +1,12 @@
 module MicroCisc
   module Vm
-    # For performance reasons the instruction classes are not instantiated
-    # on each clock cycle and we just execute the instruction using static methods
-    # Performance isn't a deal breaker, but 0.75 MIPS seems much better than 0.1 MIPS
-    # We just want something reasonable, actual hardware will leave this in the dust.
     class CopyInstruction
       def self.exec(processor, word)
         # 0EEDDDRR RCIIIIII
         return false unless store?(processor.flags, word)
 
+        source = (word & 0x0380) >> 7
         destination = (word & 0x1C00) >> 10
-        value = source_value(processor, word, destination)
-        store(processor, word, value, destination)
-
-        destination == 0 && value == 0 
-      end
-
-      def self.store?(flags, word)
-        effect = (word & 0x6000)
-        return true if effect == 0x6000
-
-        zero = flags & 0x04 > 0
-        effect = effect >> 13
-        return true if (effect == 0 && zero) || (effect == 1 && !zero)
-
-        negative = flags & 0x08 > 0
-        effect == 2 && !zero && !negative
-      end
-
-      def self.source_value(processor, word, destination)
         if destination > 0 && destination < 4
           # 6 digit value, memory target
           immediate = (word & 0x3F)
@@ -41,7 +19,27 @@ module MicroCisc
           immediate = ~(~(immediate & 0x7F) & 0x7F) if (word & 0x40) > 0
         end
 
-        source = (word & 0x0380) >> 7
+        value = source_value(processor, word, source, immediate, destination)
+        store(processor, word, value, destination)
+
+        # Detect halt instruction
+        return 1 if immediate == 0 && source == 0 && destination == 0
+        0
+      end
+
+      def self.store?(flags, word)
+        effect = (word & 0x6000)
+        return true if effect == 0x6000
+
+        zero = (flags & 0x04) > 0
+        effect = effect >> 13
+        return true if (effect == 0 && zero) || (effect == 1 && !zero)
+
+        negative = flags & 0x08 > 0
+        effect == 2 && !zero && !negative
+      end
+
+      def self.source_value(processor, word, source, immediate, destination)
         case source
         when 0
           processor.pc + immediate
@@ -108,14 +106,15 @@ module MicroCisc
           sign = (word & 0x40) > 0 ? 0x80 : 0x00
           imm = [(word & 0x7F) | sign].pack("C*").unpack("c*").first
         end
-        imm = imm < 0 ? "-0x#{(imm * -1).to_s(16).upcase}" : "0x#{imm.to_s(16)}"
+        value = source_value(processor, word, source, imm, destination)
+        store = store?(processor.flags, word)
+
+        imm = imm < 0 ? "-0x#{(imm * -1).to_s(16).upcase}" : "0x#{imm.to_s(16).upcase}"
         effect = (word & 0x6000) >> 13
         eff = "#{effect}.eff"
         push = (word & 0x40) >> 6 == 1
         push = "#{push ? 1 : 0}.push"
 
-        value = source_value(processor, word, destination)
-        store = store?(processor.flags, word)
         "0x0 #{src} #{imm} #{dest} #{eff} #{push} # value: #{value}, #{'not ' if !store}stored"
       end
     end

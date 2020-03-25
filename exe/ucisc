@@ -17,7 +17,7 @@ class MC
     address = 0
     @labels = {}
     errors = []
-    lgen = MicroCisc::Compile::LabelGenerator.new(@file.gsub('.ucisc', ''))
+    lgen = MicroCisc::Compile::LabelGenerator.new
     text.each_line do |line|
       begin
         statement = MicroCisc::Compile::Statement.new(lgen, line)
@@ -30,9 +30,19 @@ class MC
             address += 1
             puts "#{line_number}: 0x#{instruction.encoded.to_s(16).upcase}" + instruction.original
           elsif instruction.data?
-            @instructions << instruction.data
-            address += instruction.data.length
-            puts "#{line_number}: 0x#{instruction.data.unpack("C*").map { |c| c.to_s(16) }.join}"
+            @instructions += instruction.data
+            line_string = []
+            word_counts = instruction.data.map do |d|
+              if d.is_a?(String)
+                line_string << d.unpack("S*").map { |w| '%04x' % w }.join
+                d.size / 2
+              else
+                line_string << d.join('.')
+                1 # 1 16-bit word reference
+              end
+            end
+            address += word_counts.sum
+            puts "#{line_number}: 0x#{line_string.join(' ')}"
           end
         end
       rescue ArgumentError => e
@@ -59,16 +69,35 @@ class MC
     @serialize ||=
       begin
         words = []
+        dstart = nil
         @instructions.each do |ins|
           if ins.is_a?(String)
             address = words.length
-            puts "#{address.to_s(16).upcase}: 0x#{ins.unpack("S*").map { |c| c.to_s(16) }.join}"
-            words += ins.unpack("S*")
+            ins_words = ins.unpack("S*")
+            dstart ||= address
+            words += ins_words
+          elsif ins.is_a?(Array)
+            dstart ||= address
+            # Address reference in data
+            label_address = @labels[ins.first]
+            if ins.last == 'disp'
+              words << label_address - address
+            elsif ins.last == 'imm'
+              words << (label_address & 0xFFFF)
+            end
           else
             address = words.length
-            puts "#{address.to_s(16).upcase}: 0x#{ins.encoded(@labels, address).to_s(16).upcase}" + ins.original
+            if dstart
+              puts "#{'%04x' % dstart}-#{'%04x' % (address - 1)}: #{(address - dstart)} words of data"
+              dstart = nil
+            end
+            puts "#{'%04x' % address}: 0x#{ins.encoded(@labels, address).to_s(16).upcase}" + ins.original
             words << ins.encoded(@labels, address)
           end
+        end
+        if dstart
+          address = words.length
+          puts "#{'%04x' % dstart}-#{'%04x' % (address - 1)}: #{(address - dstart)} words of data"
         end
         words
       end
@@ -81,15 +110,23 @@ class MC
   end
 
   def run
-    processor = MicroCisc::Vm::Processor.new(0, serialize)
-    processor.debug = ARGV.include?('-d')
+    processors = 4
+    # mem_size is words, so it's actually 2x in bytes (32MB)
+    mem_size = 16_777_216
+    data = serialize
+    rom = Array.new((data.size / 256 + 1) * 256).map { 0 }
+    rom[0...data.size] = data
     begin
-      processor.run
+      MicroCisc::Vm::Video.new(
+        processors,
+        mem_size,
+        rom,
+        ARGV.include?('-d')
+      )
     rescue StandardError => e
       puts "Execution terminated: #{e.message}"
       puts "  #{e.backtrace.join("\n  ")}"
     end
-    processor
   end
 end
 
