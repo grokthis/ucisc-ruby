@@ -170,7 +170,19 @@ module MicroCisc
 
       def halt(count)
         delta = (Time.now - @t0)
-        log_message("HALT: #{count} instructions in #{delta}s")
+        ips = count / delta
+        magnitude =
+          if ips > 1000
+            ips = ips / 1000
+            'thousand'
+          elsif ips > 1_000_000
+            ips = ips / 1_000_000
+            'million'
+          elsif ips > 1_000_000_000
+            ips = ips / 1_000_000_000
+            'billion'
+          end
+        log_message("HALT: #{count} instructions in #{delta}s (#{"%.2f" % ips} #{magnitude} IPS)")
 
         @run = false
         msg = Message.new
