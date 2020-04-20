@@ -163,7 +163,6 @@ module MicroCisc
             run
           else
             read_from_processor
-            sleep(0.1)
           end
         end
       rescue Interrupt
@@ -184,7 +183,7 @@ module MicroCisc
       def read_from_processor
         return unless @system_reader.ready?
         message = Message.read_from_stream(@system_reader)
-        return if message.nil?
+        exit if message.nil?
 
         if message.write?
           page = message.local_page & 0xFF

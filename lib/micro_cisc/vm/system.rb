@@ -37,7 +37,11 @@ module MicroCisc
         return if page < @video.config_page
         return if page > @video.end_page
         Thread.new do
-          @video.send_page_update(page, words)
+          begin
+            @video.send_page_update(page, words)
+          rescue
+            exit
+          end
         end
       end
 
@@ -46,6 +50,7 @@ module MicroCisc
         while(true) do
           @processors.each do |p|
             process_processor(p)
+
             if @tasks.size > 0 && p[:status] == :idle
               task = @tasks.shift
               p[:status] = :busy
@@ -61,6 +66,7 @@ module MicroCisc
               message.write_to_stream(p[:writer])
             end
           end
+          @video.process_messages
         end
       rescue Interrupt
       end
