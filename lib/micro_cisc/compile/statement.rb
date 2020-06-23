@@ -1,8 +1,8 @@
 module MicroCisc
   module Compile
     class Statement
-      SUGAR_REGEX = /(?<name>\$[^\s]+)\s+(?<op>as|=)\s+(?<param>.+)/
-      FUNCTION_REGEX = /(?<stack>[^\s]+)\s+<=\s+(?<label>[a-zA-Z_][a-zA-Z0-9_\-@$!%]*)\s*\(\s*(?<args>[^)]*)/
+      SUGAR_REGEX = /(?<name>\$[^\s\[\]]+)\s+(?<op>as|=)\s+(?<param>.+)/
+      FUNCTION_REGEX = /(?<stack>[^\s\[\]]+)\s*(\[(?<words>[0-9]+)\]){0,1}\s+<=\s+(?<label>[a-zA-Z_][a-zA-Z0-9_\-@$!%]*)\s*\(\s*(?<args>[^)]*)/
       IMM_REGEX = / (0x){0,1}(?<imm_val>[0-9A-Fa-f])\.imm/
       attr_reader :original, :minimal
 
@@ -33,7 +33,7 @@ module MicroCisc
           if match['op'] == 'as'
             @sugar[name] = match['param']
             []
-          else
+          elsif match['op'] == '='
             @minimal = match['param']
             instruction = Instruction.new(@label_generator, minimal, original, @sugar)
             dest = instruction.dest
@@ -44,22 +44,38 @@ module MicroCisc
               @sugar[name] = "#{dest}.reg"
             end
             [instruction]
+          else
+            raise ArgumentError, "Invalid syntax declaration: #{@minimal}"
           end
         else
-          [Instruction.new(@label_generator, minimal, original, @sugar)]
+          [Instruction.new(@label_generator, @minimal, original, @sugar)]
         end
       end
 
       def parse_function_call
         match = FUNCTION_REGEX.match(@minimal)
         label = match['label']
+
         stack = match['stack']
+        stack = @sugar[stack] if @sugar[stack]
+        raise ArgumentError, "Invalid stack param, mem register expected: #{stack}" unless stack =~ /^[1-3]\.mem$/
+        stackp = stack.sub('mem', 'reg')
+
+        return_words = match['words'].to_i
         args = match['args'].split(',').map(&:strip)
 
-        instruction = "copy 0.reg 2.imm #{stack} push"
-        return_address = Instruction.new(@label_generator, instruction, "  #{instruction} # #{original}", @sugar)
-        stack_delta = 1
-        args = args.map.each do |arg|
+        instructions = []
+        if return_words > 0
+          instruction = "copy #{stackp} -#{return_words}.imm #{stackp}"
+          instructions << Instruction.new(@label_generator, instruction, "  #{instruction} # return vars - #{original}", @sugar)
+        end
+
+        instruction = "copy 0.reg #{args.size + 2}.imm #{stack} push"
+        instructions << Instruction.new(@label_generator, instruction, "  #{instruction} # return addr - #{original}", @sugar)
+
+        stack_delta = 1 + return_words
+        args = args.each do |arg|
+          arg = arg.split(' ').map { |a| @sugar[a] || a }.join(' ')
           is_stack = arg.start_with?(stack)
           if is_stack
             offset = stack_delta
@@ -69,16 +85,16 @@ module MicroCisc
             else
               arg_imm = 0
             end
-            offset_immediate = (offset + arg_imm) > 0 ? " #{(offset + arg_imm).to_s(16).upcase}.imm" : ''
+            offset_immediate = (offset + arg_imm) > 0 ? " #{(offset + arg_imm)}.imm" : ''
             arg = "#{arg}#{offset_immediate}"
           end
           instruction = "copy #{arg} #{stack} push"
           stack_delta += 1
-          Instruction.new(@label_generator, instruction, "  #{instruction} # #{original}", @sugar)
+          instructions << Instruction.new(@label_generator, instruction, "  #{instruction} # push arg - #{original}", @sugar)
         end
         instruction = "copy 0.reg #{label}.disp 0.reg"
-        call = Instruction.new(@label_generator, instruction, "  #{instruction} # #{original}", @sugar)
-        args + [return_address] + [call]
+        instructions << Instruction.new(@label_generator, instruction, "  #{instruction} # call - #{original}", @sugar)
+        instructions
       end
     end
   end

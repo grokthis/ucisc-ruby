@@ -15,56 +15,61 @@
 # More instructions on the compiler and debugger are in the README.md
 # Or use GitHub https://github.com/grokthis/ucisc-ruby#usage
 
+# Setup some simple syntax sugar for easy reference to stack and pc
+$stack as 1.mem
+$&stack as 1.reg
+$pc as 0.reg
+
+# Simple conditional syntax sugar
+$zero? as 0.eff
+$not_zero? as 1.eff
+$negative? as 2.eff
+
 Entry:
-  # Initialize the stack register to 0x0000, decrement on push will change to 0xFFFF
-  0/load 0xFFFF to sp/               4.val 0.imm 1.reg
+  # Init stack pointer
+  copy 0.imm $&stack
 
-  (1.mem fib 4.val 8.imm)
+  # Functions calls reserve space on the stack (the stack size number in brackets)
+  # Then they push the return address, followed by the args. The called function
+  # is expected to remove the return address and args from the stack before returning
+  $stack[1] <= fib(6.imm)
 
-  200/Debug breakpoint/              0.reg/pc/ 0.reg/pc/
+  # halt
+  copy $pc $pc
 
 fib:
-  # fib(0) == 0
-  202/or arg with itself/            1.mem/sp/ 1.mem/sp/ 1.sign 7.eff/set flags only/
+  # push n - 1
+  compute 0xB.op 1.imm $stack push
   {
-    0/break if not 0/                0.reg/pc/ break.disp 0.reg/pc/ 1.eff/not zero/
-    0/jump return/                   1.mem/sp/ 1.imm 0.reg/pc/
-  } 
+    # if negative, n == 0
+    copy $pc break.disp $pc $negative?
+    # if zero, n == 1
+    copy $pc break.disp $pc $zero?
 
-  # fib(1) == 1
-  0/load 1 into r2/                  4.val 1.imm 2.reg
-  20C/subtract 1 from arg/           2.reg/constant 1/ 1.mem/sp/ 1.sign 7.eff/don't store/
-  {
-    0/break if not zero/             0.reg/pc/ break.disp 0.reg/pc/ 1.eff/set if not zero/
+    # n > 1, n - 1 is on the stack
+    # push n - 2
+    compute 0xB.op 1.imm $stack push
 
-    # fib(1) = 1
-    0/jump return/                   1.mem/sp/ 1.imm 0.reg/pc/
+    # Recurse for fib(n-1) and fib(n-2)
+    $stack[1] <= fib($stack 1.imm)
+    $stack[1] <= fib($stack 1.imm)
+
+    compute 0xA.op $stack 1.imm $stack
+
+    #copy to return
+    copy $stack $stack 6.imm
+
+    # cleanup stack
+    copy $&stack 5.imm $&stack
+   
+    # Jump return and pop address 
+    copy $stack $pc pop
   }
 
-  # Recurse for fib(arg-1) and fib(arg-2)
-  {
-    0/copy n/                        1.mem 1.mem 1.push
+  # n == 1 or n == 0, return n
+  # Save result to return
+  copy $stack 1.imm $stack 3.imm
+  copy $&stack 2.imm $&stack
 
-    0/load 1 into r2/                4.val 1.imm 2.reg/1 constant/
-    20C/subtract 1 from n/           2.reg/constant 1/ 1.mem/sp/
-
-    (1.mem fib 1.mem)
-  }
-  {
-    0/copy n/                        1.mem 3.imm 1.mem 1.push
-
-    0/load 2 into r2/                4.val 2.imm 2.reg/1 constant/
-    20C/subtract 2 from n/           2.reg/constant 1/ 1.mem/sp/
-
-    (1.mem fib 1.mem)
-  }
- 
-  0/load &fib(n-1)/                  1.mem/sp/ 3.imm 2.reg/fib(n-1)/ 
-  20A/fib(n-1) + fib(n-2)/           2.reg 1.mem/sp/
-  0/copy fib(n) to r2/               1.mem/sp/ 0.imm 2.reg
-  
-  0/pop recursive calls from sp/     1.reg/sp/ 6.imm 1.reg/sp/
-  0/copy fib(n) to stack/            2.reg/fib(n)/ 0.imm 1.mem/sp/
-
-  0/jump return/                     1.mem/sp/ 1.imm 0.reg/pc/
-
+  # Jump return and pop address
+  copy $stack $pc pop

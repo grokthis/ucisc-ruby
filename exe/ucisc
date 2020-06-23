@@ -111,9 +111,6 @@ class MC
   end
 
   def run
-    processors = 4
-    # mem_size is words, so it's actually 2x in bytes (32MB)
-    mem_size = 16_777_216
     data = serialize
     rom = Array.new(256).map { 0 }
     rom[0...data.size] = data

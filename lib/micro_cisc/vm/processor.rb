@@ -87,7 +87,7 @@ module MicroCisc
         @registers[id] = value
       end
 
-      def extract_immediate(word, is_copy, inc_is_immediate, signed)
+      def extract_immediates(word, is_copy, inc_is_immediate, signed, half_width)
         if is_copy
           immediate_mask = IMMEDIATE_MASK | ALU_OP_MASK
           immediate_shift = 0
@@ -104,19 +104,28 @@ module MicroCisc
 
         if signed && ((word & sign_mask) != 0)
           # Fancy bit inverse for high performance sign extend
-          ~(~(word & immediate_mask) & immediate_mask) >> immediate_shift
+          [~(~(word & immediate_mask) & immediate_mask) >> immediate_shift]
+        elsif half_width
+          [
+            (word & immediate_mask) >> (immediate_shift + 3),
+            (word & (immediate_mask >> 3)) >> immediate_shift
+          ]
         else
-          (word & immediate_mask) >> immediate_shift
+          [(word & immediate_mask) >> immediate_shift]
         end
       end
 
+      # * 0 = zero?
+      # * 1 = not zero?
+      # * 2 = negative?
+      # * 3 = store
       def store?(flags, effect)
         return true if effect == 3 # handle the common case quickly
 
         zero = flags & ZERO_MASK != 0
         (effect == 0 && zero) ||
           (effect == 1 && !zero) ||
-          (effect == 2 && flags & OVERFLOW_MASK != 0)
+          (effect == 2 && (flags & NEGATIVE_MASK != 0))
       end
 
       def source_value(source, immediate)
@@ -132,12 +141,12 @@ module MicroCisc
         end
       end
 
-      def destination_value(destination)
+      def destination_value(destination, immediate)
         case destination
         when 0
           @pc
         when 1,2,3
-          read_mem(@id, @registers[destination])
+          read_mem(@id, @registers[destination] + immediate)
         when 4
           @control
         else
@@ -152,33 +161,35 @@ module MicroCisc
 
         signed = !MEM_ARGS.include?(source)
         inc_is_immediate = signed && !MEM_ARGS.include?(destination)
-        is_copy = word & OP_MASK == 0
-        immediate = extract_immediate(word, is_copy, inc_is_immediate, signed)
+        is_copy = (word & OP_MASK) == 0
+        half_width = is_copy && MEM_ARGS.include?(source) && MEM_ARGS.include?(destination)
+        immediates = extract_immediates(word, is_copy, inc_is_immediate, signed, half_width)
 
         alu = word & ALU_OP_MASK
-        result = compute_result(is_copy, source, destination, immediate, alu, true)
+        result = compute_result(is_copy, source, destination, immediates, alu, true)
 
         return false unless store?(@flags, effect)
 
         push = !inc_is_immediate && (word & INCREMENT_MASK) > 0
-        store_result(result, source, destination, push, 0)
+        store_result(result, source, destination, immediates, push, 0)
 
         # Detect halt instruction
-        return 1 if immediate == 0 && source == 0 && destination == 0
+        return 1 if immediates.first == 0 && source == 0 && destination == 0
         0
       end
 
-      def compute_result(is_copy, source, destination, immediate, alu, update_flags)
-        source_value = source_value(source, immediate)
+      def compute_result(is_copy, source, destination, immediates, alu, update_flags)
+        source_value = source_value(source, immediates.first)
         if is_copy
           source_value
         else
-          destination_value = destination_value(destination)
+          dest_immediate = immediates.size > 1 ? immediates.last : 0
+          destination_value = destination_value(destination, dest_immediate)
           compute(alu, source_value, destination_value, update_flags)
         end
       end
 
-      def store_result(value, source, destination, push, sign)
+      def store_result(value, source, destination, immediates, push, sign)
         case destination
         when 0
           @pc = value
@@ -187,8 +198,9 @@ module MicroCisc
           if push
             @registers[destination] = (@registers[destination] - 1) & 0xFFFF
           end
-          address = @registers[destination]
-          write_mem(@id, @registers[destination], value)
+          imm = immediates.size > 1 ? immediates.last : 0
+          address = @registers[destination] + imm
+          write_mem(@id, address, value)
         when 4
           self.control = value
         else
@@ -268,7 +280,7 @@ module MicroCisc
           end
           value = arg1 * arg2
           overflow_reg = (value & 0xFFFF0000 >> 16) & 0xFFFF
-          if ((overflow_reg & SIGN_BIT) == (value_reg & SIGN_BIT)) &&
+          if ((overflow_reg & SIGN_BIT) == (value & SIGN_BIT)) &&
               overflow_reg == 0xFFFF
             # There was no actual overflow, it's just the sign extension
             overflow = 0 
@@ -303,7 +315,7 @@ module MicroCisc
           @flags = flags
           @overflow = overflow_reg
         end
-        value
+        value & 0xFFFF
       end
 
       def start(debug = false)
@@ -345,6 +357,7 @@ module MicroCisc
         exit(1) if /exit/.match(command)
         @debug = true if /debug|n|next/.match(command)
         @debug = false if /c|continue/.match(command)
+        puts stack_string if /stack/.match(command)
         byebug if /break/.match(command)
       end
 
@@ -355,8 +368,19 @@ module MicroCisc
       def halt(count)
         delta = (Time.now - @t0)
         puts("HALT: #{count} instructions in #{delta}s")
+        puts("Stack: " + stack_string)
 
         @run = false
+      end
+
+      def stack_string
+        str = ""
+        address = @registers[1] & 0xFFFF
+        while(address > 0xFF00 && address < 0x10000 && address - @registers[1] < 10)
+          str += "#{'%04x' % address}: #{'%04x' % read_mem(@id, address)} "
+          address += 1
+        end
+        str
       end
 
       def ucisc(word)
@@ -386,44 +410,34 @@ module MicroCisc
             "#{destination - 4}.reg"
           end
 
+        # Eh?
         signed = !MEM_ARGS.include?(source)
         inc_is_immediate = signed && !MEM_ARGS.include?(destination)
-        is_copy = word & OP_MASK == 0
-        immediate = extract_immediate(word, is_copy, inc_is_immediate, signed)
+        is_copy = (word & OP_MASK) == 0
+        half_width = is_copy && MEM_ARGS.include?(source) && MEM_ARGS.include?(destination)
+        immediates = extract_immediates(word, is_copy, inc_is_immediate, signed, half_width)
 
-        value = source_value(source, immediate)
+        value = source_value(source, immediates.first)
         store = store?(@flags, effect)
 
         alu = word & ALU_OP_MASK
-        result = compute_result(is_copy, source, destination, immediate, alu, true)
+        result = compute_result(is_copy, source, destination, immediates, alu, true)
         alu = is_copy ? '' : "0x#{alu.to_s(16).upcase}.op "
 
-        imm = immediate < 0 ? "-#{(immediate * -1)}" : "#{immediate.to_s}"
+        imm0 = immediates.first < 0 ? "-#{(immediates.first * -1)}.imm" : "#{immediates.first}.imm"
+        imm1 =
+          if half_width
+            immediates.last < 0 ? "-#{(immediates.last * -1)}.imm " : "#{immediates.last}.imm "
+          else
+            ""
+          end
         eff = "#{effect}.eff"
         push = !inc_is_immediate && (word & INCREMENT_MASK) > 0
         push = push ? 'push ' : ''
         ins = is_copy ? 'copy' : 'compute'
 
-        "#{ins} #{alu}#{src} #{imm} #{dest} #{eff} #{push}# value: #{value} (0x#{'%04x' % value}), result: #{result} (0x#{'%04x' % result}), #{'not ' if !store}stored"
-      end
 
-      private
-
-      def read_from_processor
-        return unless @system_reader.ready?
-        message = Message.read_from_stream(@system_reader)
-        return if message.nil?
-
-        if message.write?
-          page = message.local_page & 0xFF
-          data = message.data
-          write_page(page, data)
-          @paging = @paging.select { |p| p != page }
-        elsif message.start?
-          @run = true
-        elsif message.halt?
-          halt
-        end
+        "Stack: #{stack_string}\n#{ins} #{alu}#{src} #{imm0} #{dest} #{imm1}#{eff} #{push}# value: #{value} (0x#{'%04x' % value}), result: #{result} (0x#{'%04x' % result}), #{'not ' if !store}stored"
       end
     end
   end

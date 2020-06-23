@@ -119,27 +119,16 @@ module MicroCisc
         component.first
       end
 
-      def validate_page_dir(component, current)
-        raise ArgumentError, "Duplicate #{component.last} value" if current
-        if component.first > 1 || component.first < 0
-          raise ArgumentError, "Invalid page direction: #{component.first}"
-        end
-        if (component.first == 0 && component.last != 'out') ||
-            (component.first == 1 && component.last != 'in')
-          raise ArgumentError, "Invalid value #{component.first} for #{component.last}"
-        end
-        component.first
-      end
-
       def parse(operation)
         @operation = operation
         components = @components[1..-1]
         args = []
-        imm_pos = nil
+        @immediates = []
         @uses_mem_arg = false
         uses_push = false
         uses_pop = false
         @source_is_mem = false
+        @dest_is_mem = false
 
         while components.size > 0
           to_parse = components.shift
@@ -151,7 +140,9 @@ module MicroCisc
           if ['val', 'reg', 'mem'].include?(parsed.last)
             @uses_mem_arg = true if parsed.last == 'mem'
             @source_is_mem = true if args.empty? && parsed.last == 'mem'
+            @dest_is_mem = true if !args.empty? && parsed.last == 'mem'
             args << parsed
+            @immediates << 0
           elsif parsed.last == 'op'
             @alu_code = validate_alu(parsed, @alu_code)
           elsif parsed.last == 'push'
@@ -163,26 +154,25 @@ module MicroCisc
           elsif parsed.last == 'eff'
             @eff = validate_effect(parsed, @eff)
           elsif (parsed.last == 'disp' || parsed.last == 'imm')
-            raise ArgumentError, "Duplicate immediate value" if @imm
             if args.empty?
               # if immediate is first arg, this is a 4.val source
               args << [4, 'val']
+              @immediates << 0
             end
-            if parsed.first.is_a?(Numeric)
-              @imm = parsed.first
-            else
-              if parsed.first == 'break'
-                @imm = [@label_generator.end_label, parsed.last]
-              elsif parsed.first == 'loop'
-                @imm = [@label_generator.start_label, parsed.last]
+
+            imm =
+              if parsed.first.is_a?(Numeric)
+                parsed.first
               else
-                @imm = parsed
+                if parsed.first == 'break'
+                  [@label_generator.end_label, parsed.last]
+                elsif parsed.first == 'loop'
+                  [@label_generator.start_label, parsed.last]
+                else
+                  parsed
+                end
               end
-            end
-            imm_pos = args.size
-            if imm_pos > 2
-              raise ArgumentError, "Immediate must be part of the source argument"
-            end
+            @immediates[args.size - 1] = imm
           else
             raise ArgumentError, "Invalid argument for #{@operation}: #{to_parse}"
           end
@@ -192,24 +182,34 @@ module MicroCisc
           raise ArgumentError, "Missing source and/or destination arguments"
         end
         @eff ||= 3
-        @imm ||= 0
         if @inc && !@uses_mem_arg
           raise ArgumentError, "Memory argument required to use push and pop"
+        end
+        if @operation == 'alu' && !@alu_code
+          raise ArgumentError, "Compute instruction must have ALU op code"
         end
         @inc ||= 0
         @bit_width = 7
         @bit_width -= 4 if @operation == 'alu'
         @bit_width -= 1 if @uses_mem_arg
-        if @imm.is_a?(Numeric)
-          validate_immediate(@imm)
+        @immediates.each_with_index do |imm, index|
+          if imm.is_a?(Numeric)
+            validate_immediate(imm, index)
+          end
         end
 
-        @src, @dest, @dir = validate_args(args.first, args.last, imm_pos)
+        if @immediates.last != 0 && (!@source_is_mem || !@dest_is_mem)
+          raise ArgumentError, "Destination immediate is only allowed when both arguments are mem args"
+        end
+
+        @src, @dest, @dir = validate_args(args.first, args.last)
         nil
       end
 
-      def validate_immediate(value)
-        if @source_is_mem
+      def validate_immediate(value, index)
+        width = @bit_width
+        width = width / 2 if @source_is_mem && @dest_is_mem
+        if index == 0 && @source_is_mem || index == 1 && @dest_is_mem
           min = 0
           max = (2 << @bit_width) - 1
         else
@@ -224,23 +224,26 @@ module MicroCisc
       end
 
       def encoded(label_dictionary = nil, current_address = nil)
-        if @imm.is_a?(Numeric)
-          imm = @imm
-        elsif label_dictionary.nil?
-          imm = 0
-        elsif @imm.is_a?(Array)
-          raise ArgumentError, 'Current address is missing' if current_address.nil?
-          label_address = label_dictionary[@imm.first]
-          raise ArgumentError, "Missing label '#{@imm.first}'" if label_address.nil?
-          label_address = label_address & 0xFFFF
-          if @imm.last == 'disp'
-            imm = label_address - current_address
-          elsif @imm.last == 'imm'
-            imm = label_address & 0xFFFF
+        imms = @immediates.map do |imm|
+          if imm.is_a?(Numeric)
+            imm
+          elsif label_dictionary.nil?
+            0
+          elsif imm.is_a?(Array)
+            raise ArgumentError, 'Current address is missing' if current_address.nil?
+            label_address = label_dictionary[imm.first]
+            raise ArgumentError, "Missing label '#{imm.first}'" if label_address.nil?
+            label_address = label_address & 0xFFFF
+            if imm.last == 'disp'
+              label_address - current_address
+            elsif imm.last == 'imm'
+              label_address & 0xFFFF
+            else
+              raise ArgumentError, "Invalid immediate spec: #{imm.first}.#{imm.last}"
+            end
           else
-            raise ArgumentError, "Invalid immediate spec: 0x#{@imm.first.to_s(16).upcase}.#{@imm.last}"
+            raise ArgumentError, "Invalid immediate spec: #{imm.first}.#{imm.last}"
           end
-          validate_immediate(imm)
         end
 
         op_code = @operation == 'alu' ? 1 : 0
@@ -253,21 +256,23 @@ module MicroCisc
 
         imm_mask = ~(-1 << @bit_width)
         if @operation == 'alu'
-          lsb = lsb | ((imm & imm_mask) << 4) | (@alu_code & 0xF)
+          lsb = lsb | ((imms.first & imm_mask) << 4) | (@alu_code & 0xF)
         else
+          imm =
+            if @source_is_mem && @dest_is_mem
+              ((imms.first & 0x7) << 3) | (imms.last & 0x7)
+            else
+              imms.first
+            end
           lsb = lsb | (imm & imm_mask)
         end
 
         ((msb & 0xFF) << 8) | (lsb & 0xFF)
       end
 
-      def validate_args(first_arg, second_arg, imm_pos)
+      def validate_args(first_arg, second_arg)
         register = validate_reg(first_arg)
         dest = validate_dest(second_arg)
-
-        if !imm_pos.nil? && imm_pos != 1
-          raise ArgumentError, "Invalid immediate position, it must follow the first arg"
-        end
 
         [register, dest, dir]
       end
