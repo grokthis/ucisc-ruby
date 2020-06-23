@@ -3,7 +3,7 @@ module MicroCisc
     class Instruction
       attr_reader :label, :instruction, :data, :imm, :sign, :dir, :reg, :dest, :original, :minimal
 
-      def initialize(label_generator, minimal, original)
+      def initialize(label_generator, minimal, original, sugar)
         @label_generator = label_generator
         @original = original
         @label = nil
@@ -11,8 +11,9 @@ module MicroCisc
         @sign = nil
         @dir = nil
         @imm = nil
-        @reg = nil
+        @src = nil
         @dest = nil
+        @sugar = sugar
         parse_ucisc(minimal)
       end
 
@@ -71,27 +72,31 @@ module MicroCisc
 
         @opcode = parse_component(@components.first).first
         case @opcode
-        when 0x0
-          @sign = 1 # Immediate is automatically signed
+        when 'copy'
           parse('copy')
-        when 0x7
-          parse('control')
-        when 0x6
-          parse('page')
-        when 0x200..0x21F
-          @alu_code = @opcode & 0x1F
-          @opcode = 0x2
+        when 'compute'
           parse('alu')
         end
       end
 
       def parse_component(component)
         parts = component.split('.')
-        if /^-{0,1}(0x){0,1}[0-9A-Fa-f]+$/.match(parts.first)
+        if /^-{0,1}[0-9A-Fa-f]+$/.match(parts.first)
+          [parts.first.to_i, parts.last.downcase]
+        elsif /^-{0,1}(0x){0,1}[0-9A-Fa-f]+$/.match(parts.first)
           [parts.first.to_i(16), parts.last.downcase]
         else
           [parts.first, parts.last.downcase]
         end
+      end
+
+      def validate_alu(component, current)
+        raise ArgumentError, "Duplicate #{component.last} value" if current
+        code = component.first
+        unless code >= 0 && code < 16
+          raise ArgumentError, "Value of #{component.last} must be between 0x0 and 0xF instead of #{component.first.to_s(16).upcase}"
+        end
+        component.first
       end
 
       def validate_effect(component, current)
@@ -104,6 +109,10 @@ module MicroCisc
 
       def validate_boolean(component, current)
         raise ArgumentError, "Duplicate #{component.last} value" if current
+        if component.first == component.last
+          # Was used with syntax sugar without the numeric argument
+          component[0] = 1
+        end
         unless (0..1).include?(component.first)
           raise ArgumentError, "Value of #{component.last} must be 0x0 or 0x1 instead of 0x#{component.first.to_s(16).upcase}"
         end
@@ -127,26 +136,38 @@ module MicroCisc
         components = @components[1..-1]
         args = []
         imm_pos = nil
+        @uses_mem_arg = false
+        uses_push = false
+        uses_pop = false
+        @source_is_mem = false
 
         while components.size > 0
           to_parse = components.shift
+          if(to_parse.start_with?('$'))
+            raise ArgumentError, "Missing ref #{to_parse}" unless @sugar[to_parse]
+            to_parse = @sugar[to_parse]
+          end
           parsed = parse_component(to_parse)
-          if ['val', 'reg', 'mem', 'xmem'].include?(parsed.last)
+          if ['val', 'reg', 'mem'].include?(parsed.last)
+            @uses_mem_arg = true if parsed.last == 'mem'
+            @source_is_mem = true if args.empty? && parsed.last == 'mem'
             args << parsed
-          elsif parsed.last == 'sign' && ['alu'].include?(@operation)
-            @sign = validate_boolean(parsed, @sign)
-          elsif parsed.last == 'inc' && ['alu'].include?(@operation)
-            @inc = validate_boolean(parsed, @inc)
-          elsif parsed.last == 'push' && ['copy'].include?(@operation)
-            @inc = validate_boolean(parsed, @inc)
-          elsif parsed.last == 'eff' && ['alu', 'copy'].include?(@operation)
+          elsif parsed.last == 'op'
+            @alu_code = validate_alu(parsed, @alu_code)
+          elsif parsed.last == 'push'
+            @inc = validate_boolean(parsed, @sign)
+            uses_push = true
+          elsif parsed.last == 'pop'
+            @inc = validate_boolean(parsed, @sign)
+            uses_pop = true
+          elsif parsed.last == 'eff'
             @eff = validate_effect(parsed, @eff)
-          elsif ['in', 'out'].include?(parsed.last) && ['page'].include?(@operation)
-            @page_dir = validate_page_dir(parsed, @page_dir)
-          elsif parsed.last == 'lock' && ['page'].include?(@operation)
-            @lock = validate_boolean(parsed, @lock)
-          elsif (parsed.last == 'disp' || parsed.last == 'imm') && ['copy'].include?(@operation)
+          elsif (parsed.last == 'disp' || parsed.last == 'imm')
             raise ArgumentError, "Duplicate immediate value" if @imm
+            if args.empty?
+              # if immediate is first arg, this is a 4.val source
+              args << [4, 'val']
+            end
             if parsed.first.is_a?(Numeric)
               @imm = parsed.first
             else
@@ -159,8 +180,8 @@ module MicroCisc
               end
             end
             imm_pos = args.size
-            if imm_pos < 1 || imm_pos > 2
-              raise ArgumentError, "Immediate must be immediately after the register argument"
+            if imm_pos > 2
+              raise ArgumentError, "Immediate must be part of the source argument"
             end
           else
             raise ArgumentError, "Invalid argument for #{@operation}: #{to_parse}"
@@ -170,40 +191,35 @@ module MicroCisc
         if args.size != 2
           raise ArgumentError, "Missing source and/or destination arguments"
         end
-        @sign ||= 0
         @eff ||= 3
-        @inc ||= 0
         @imm ||= 0
-        if @operation == 'alu'
-          if (@inc == 1 || @sign == 0) && @eff > 3
-            raise ArgumentError, "Effect must be 0-3 when 1.inc or 0.sign is specified"
-          elsif @inc == 0 && @sign == 1 && @eff < 4
-            raise ArgumentError, "Effect must be 4-7 when 0.inc and 0.sign is specified"
-          end
-        elsif @operation == 'page'
-          if @page_dir.nil?
-            raise ArgumentError, "Expecting page direction (0.out or 1.in)"
-          elsif @lock.nil?
-            raise ArgumentError, "Expecting lock action for page"
-          end
+        if @inc && !@uses_mem_arg
+          raise ArgumentError, "Memory argument required to use push and pop"
         end
+        @inc ||= 0
+        @bit_width = 7
+        @bit_width -= 4 if @operation == 'alu'
+        @bit_width -= 1 if @uses_mem_arg
         if @imm.is_a?(Numeric)
-          validate_immediate(@imm, args.first.first)
+          validate_immediate(@imm)
         end
 
-        @reg, @dest, @dir = validate_args(args.first, args.last, imm_pos)
+        @src, @dest, @dir = validate_args(args.first, args.last, imm_pos)
         nil
       end
 
-      def validate_immediate(value, reg)
-        if @operation == 'copy'
-          if reg == 4 && (value < -32 || value > 31)
-            raise ArgumentError, "Immediate for copy must be between -32 and 31 instead of 0x#{value}"
-          elsif reg != 4 && (value < -64 || value > 63)
-            raise ArgumentError, "Immediate for copy must be between -64 and 63 instead of 0x#{value}"
-          end
-        elsif @operation == 'page' && (value < -32 || value > 31)
-          raise ArgumentError, "Immediate for page must be between -32 and 31 instead of 0x#{value}"
+      def validate_immediate(value)
+        if @source_is_mem
+          min = 0
+          max = (2 << @bit_width) - 1
+        else
+          magnitude = 2 << (@bit_width - 1)
+          min = magnitude * -1
+          max = magnitude - 1
+        end
+        if (value < min || value > max)
+          signed = @source_is_mem ? 'unsigned' : 'signed'
+          raise ArgumentError, "Immediate max bits is #{@bit_width} #{signed}; value must be between #{min} and #{max} instead of #{value}"
         end
       end
 
@@ -224,29 +240,25 @@ module MicroCisc
           else
             raise ArgumentError, "Invalid immediate spec: 0x#{@imm.first.to_s(16).upcase}.#{@imm.last}"
           end
-          validate_immediate(imm, @reg)
+          validate_immediate(imm)
         end
 
-        if @operation == 'copy'
-          # 0EEDDDRR RMIIIIII
-          if [1, 2, 3].include?(@reg)
-            imm = imm & 0x3F
-          else
-            imm = imm & 0x7F
-          end
-          msb = (@eff << 5) | (@dest << 2) | (@reg >> 1)
-          ((msb & 0xFF) << 8) | ((@reg & 0x01) << 7) | (@inc << 6) | imm
-        elsif @operation == 'alu'
-          # 10SMDDRR RAAAAAEE
-          msb = 0x80 | (@sign << 5) | (@inc << 4) | (@dest << 2) | (@reg >> 1)
-          lsb = ((@reg & 0x01) << 7) | (@alu_code << 2) | @eff % 4
-          ((msb & 0xFF) << 8) | (lsb & 0xFF)
-        elsif @operation == 'page'
-          # 110NLLPP PKIIIIII
-          msb = 0xC0 | (@page_dir << 4) | (@dest << 2) | (@reg >> 1)
-          lsb = ((@reg & 0x01) << 7) | (@lock << 6) | (imm & 0x3F)
-          ((msb & 0xFF) << 8) | (lsb & 0xFF)
+        op_code = @operation == 'alu' ? 1 : 0
+        msb = (op_code << 7) | (@eff << 5) | (@dest << 2) | (@src >> 1)
+        lsb = ((@src & 0x01) << 7)
+
+        if @uses_mem_arg
+          lsb = lsb | (@inc << 6)
         end
+
+        imm_mask = ~(-1 << @bit_width)
+        if @operation == 'alu'
+          lsb = lsb | ((imm & imm_mask) << 4) | (@alu_code & 0xF)
+        else
+          lsb = lsb | (imm & imm_mask)
+        end
+
+        ((msb & 0xFF) << 8) | (lsb & 0xFF)
       end
 
       def validate_args(first_arg, second_arg, imm_pos)
@@ -261,48 +273,30 @@ module MicroCisc
       end
 
       def validate_reg(arg)
-        valid = false
-        if @operation == 'alu'
-          valid = arg.first == 0 && arg.last == 'reg'
-          valid = valid || ([1, 2, 3].include?(arg.first) && arg.last == 'mem')
-          valid = valid || ([4, 1, 2, 3].include?(arg.first) && arg.last == 'reg')
-        elsif @operation == 'copy'
-          valid = arg.first == 0 && arg.last == 'reg'
-          valid = valid || ([1, 2, 3].include?(arg.first) && arg.last == 'mem')
-          valid = valid || (arg.first == 4 && arg.last == 'val')
-          valid = valid || ([1, 2, 3].include?(arg.first) && arg.last == 'reg')
-        elsif @operation == 'page'
-          valid = [1, 2, 3].include?(arg.first) && arg.last == 'mem'
-          valid = valid || (arg.first == 4 && arg.last == 'val')
-          valid = valid || ([1, 2, 3].include?(arg.first) && arg.last == 'xmem')
-        end
+        valid = arg.first == 0 && arg.last == 'reg'
+        valid = valid || ([1, 2, 3].include?(arg.first) && arg.last == 'mem')
+        valid = valid || (arg.first == 4 && arg.last == 'val')
+        valid = valid || ([1, 2, 3].include?(arg.first) && arg.last == 'reg')
 
         if valid
           reg = arg.first
-          reg += 4 if [1, 2, 3].include?(arg.first) && ['reg', 'xmem'].include?(arg.last)
+          reg += 4 if [1, 2, 3].include?(arg.first) && 'reg' == arg.last
           reg
         else
-          raise ArgumentError, "Invalid register value: 0x#{arg.first.to_s(16).upcase}.#{arg.last}"
+          raise ArgumentError, "Invalid register: #{arg.first.to_s}.#{arg.last}"
         end
       end
 
       def validate_dest(arg)
-        if @operation == 'copy'
-          valid = arg.last == 'mem' && [1, 2, 3].include?(arg.first)
-          valid = valid || (arg.last == 'reg' && [0, 4, 1, 2, 3].include?(arg.first))
-        elsif @operation == 'alu'
-          valid = arg.last == 'mem' && [1, 2, 3].include?(arg.first)
-          valid = valid || (arg.last == 'reg' && arg.first == 0)
-        elsif @operation == 'page'
-          valid = arg.last == 'mem' && [1, 2, 3].include?(arg.first)
-          valid = valid || (arg.last == 'blank' && arg.first == 0)
-        end
+        valid = arg.last == 'mem' && [1, 2, 3].include?(arg.first)
+        valid = valid || (arg.last == 'reg' && [0, 4, 1, 2, 3].include?(arg.first))
+
         if valid
           reg = arg.first
           reg += 4 if [1, 2, 3].include?(arg.first) && arg.last == 'reg'
           reg
         else
-          raise ArgumentError, "Invalid destination value: 0x#{arg.first.to_s(16).upcase}.#{arg.last}"
+          raise ArgumentError, "Invalid destination: #{arg.first.to_s}.#{arg.last}"
         end
       end
     end

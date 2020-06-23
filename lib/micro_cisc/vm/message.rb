@@ -139,10 +139,6 @@ module MicroCisc
         @instruction == 'halt'
       end
 
-      def heartbeat?
-        @instruction == 'heartbeat'
-      end
-
       def write?
         @instruction == 'write'
       end
@@ -181,10 +177,6 @@ module MicroCisc
 
       def halt
         @instruction = 'halt'
-      end
-
-      def heartbeat
-        @instruction = 'heartbeat'
       end
 
       def write(main_page, local_page, word_array, lock = false)

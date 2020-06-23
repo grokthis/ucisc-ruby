@@ -1,0 +1,101 @@
+# A recursive factorial algorithm
+# Inspired by the SubX example near the bottom of this post:
+# http://akkartik.name/post/mu-2019-1
+#
+# The goal is to compare the implementation of the uCISC ISA to x86
+# as well as roughly see how things line up with SubX and look for
+# the coming MuCISC goals
+#
+# To run:
+#   $ exe/ucisc examples/factorial.ucisc
+#
+# Type 'break' when you hit the breakpoint, then `load(register(1))`
+# to view the result on the stack
+#
+# More instructions on the compiler and debugger are in the README.md
+# Or use GitHub https://github.com/grokthis/ucisc-ruby#usage
+
+# Setup some simple syntax sugar for easy reference to stack and pc
+$stack as 1.mem
+$*stack as 1.reg
+$pc as 0.reg
+
+# Simple conditional syntax sugar
+$zero? as 0.eff
+
+Entry:
+  # Init stack pointer
+  copy 0.imm $*stack
+
+  # Call factorial
+  # Calling convention is to push args to stack, in order then push return address
+  # On return, args and return address are removed, result is in it's place
+  $stack <= print_string(31.imm, hello.imm)
+
+  # halt
+  copy $pc $pc
+
+hello:
+
+# "Hello, world! uCISC is here!" in hex
+% 0A48 656C 6C6f 2C20 776F 726C 6421 2075 4349 5343 2069 7320 6865 7265 210A 0A00
+
+term_device:
+
+% 0100
+
+print_string: # (len, *string)
+  $*term as 2.reg
+  $term as 2.mem
+
+  # reference term control
+  copy $pc term_device.disp $*term
+  copy $term $*term
+
+  # Bank regions 0x0000 and 0x1000
+  copy 3.imm 4.reg
+  # reference term page
+  compute 0x8.op/zero LSB/ $term 1.imm $*term
+
+  # Bank region 0x1000
+  copy 2.imm 4.reg
+
+  $*str as 3.reg
+  $str as 3.mem
+  copy $stack 1.imm $*str
+  # Move length to top of stack
+  copy $stack 2.imm $stack push
+  # Len is in bytes, add 1 and divide by 2 to get word len
+  compute 0xA.op/add/ 1.imm $stack
+  compute 0x6.op/shift >>/ 1.imm $stack
+
+  # Loop over string, copy to $term
+  {
+    copy $pc break.disp $pc $zero?
+
+    copy $str $term
+    compute 0xA.op/add/ 1.imm $*str
+    compute 0xA.op/add/ 1.imm $*term
+
+    compute 0xB.op/OR/ 1.imm $stack
+
+    copy $pc loop.disp $pc
+  }
+
+  # write length to $term 5.imm
+  copy $pc term_device.disp $*term
+  copy $term $*term
+  # Bank regions 0x0000 and 0x1000
+  copy 3.imm 4.reg
+  # offset to length command
+  copy $*term 5.imm $*term
+  copy $stack 3.imm $term
+
+  # Unbank all regions
+  copy 0.imm 4.reg
+
+  copy $stack 1.imm 2.reg
+  copy $*stack 3.imm $*stack
+
+  # Jump return
+  copy 2.reg $pc
