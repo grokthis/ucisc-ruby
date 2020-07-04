@@ -6,6 +6,7 @@ require "micro_cisc/version"
 require "micro_cisc/compile/label_generator"
 require "micro_cisc/compile/instruction"
 require "micro_cisc/compile/statement"
+require "micro_cisc/compile/compiler"
 
 require "micro_cisc/vm/device"
 require "micro_cisc/vm/processor"

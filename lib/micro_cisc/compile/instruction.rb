@@ -132,7 +132,7 @@ module MicroCisc
 
         while components.size > 0
           to_parse = components.shift
-          if(to_parse.start_with?('$'))
+          if(to_parse.start_with?('$') || to_parse.start_with?('&'))
             raise ArgumentError, "Missing ref #{to_parse}" unless @sugar[to_parse]
             to_parse = @sugar[to_parse]
           end

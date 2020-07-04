@@ -34,7 +34,7 @@ highlight link uciscControl Statement
 syntax match uciscImmediate /\<\((\)\?\(-\)\?\(0x\)\?[0-9a-fA-F]\+\([/.]\|\s\|,\)\@=/
 highlight link uciscImmediate Number
 
-syntax match uciscArg /\$[a-zA-Z0-9_:&@!?*]\+/
+syntax match uciscArg /\(\$\|&\)[a-zA-Z0-9_:&@!?*]\+/
 highlight link uciscArg Type
 
 syntax keyword uciscOption push pop as

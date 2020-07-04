@@ -17,49 +17,42 @@
 
 # Setup some simple syntax sugar for easy reference to stack and pc
 $stack as 1.mem
-$&stack as 1.reg
-$pc as 0.reg
+&pc as 0.reg
 
 # Simple conditional syntax sugar
 $zero? as 0.eff
-$not_zero? as 1.eff
 
-Entry:
-  # Init stack pointer
-  copy 0.imm $&stack
+# Init stack pointer
+copy 0.imm &stack
 
-  # Call factorial
-  # Calling convention is to push args to stack, in order then push return address
-  # On return, args and return address are removed, result is in it's place
-  $stack[1] <= factorial(6.imm)
+# Call factorial
+# Calling convention is to push args to stack, in order then push return address
+# On return, args and return address are removed, result is in it's place
+$stack[1] <= factorial(4.imm)
 
-  # halt
-  copy $pc $pc
+# halt
+copy &pc &pc
 
 factorial: # (n)
-  # factorial(1) == 1
+  # calculate n - 1, push to stack
   compute 0xB.op/subtract/ 1.imm $stack push
   {
-    copy $pc break.disp $pc $not_zero?
+    # factorial(1) = 1, copy 1 to result
+    copy $stack 1.imm $stack 3.imm $zero?
+    copy &pc break.disp &pc $zero?
   
-    # pop n-1 off stack 
-    copy $stack 1.imm $stack 3.imm
-    copy $&stack 2.imm $&stack
+    # compute factorial(n-1)
+    $stack <= factorial($stack)
 
-    # jump return, pop return address off stack
-    copy $stack $pc pop
+    # multiply n * factorial(n-1)
+    compute 0xC.op $stack 1.imm $stack
+    # Copy answer to result
+    copy $stack $stack 3.imm
   } 
 
-  # compute factorial(n-1)
-  $stack[1] <= factorial($stack)
+  # pop n-1 off stack 
+  copy &stack 2.imm &stack
 
-  # multiply n * factorial(n-1), cleanup stack
-  compute 0xC.op $stack 2.imm $stack
-
-  # copy $result, pop factorial(n)
-  copy $stack $stack 4.imm
-  copy $&stack 3.imm $&stack
-
-  # return
-  copy $stack $pc pop
+  # jump return, pop return address off stack
+  copy $stack &pc pop
 

@@ -1,7 +1,7 @@
 module MicroCisc
   module Compile
     class Statement
-      SUGAR_REGEX = /(?<name>\$[^\s\[\]]+)\s+(?<op>as|=)\s+(?<param>.+)/
+      SUGAR_REGEX = /(?<name>(\$|&)[^\s\[\]]+)\s+(?<op>as|=)\s+(?<param>.+)/
       FUNCTION_REGEX = /(?<stack>[^\s\[\]]+)\s*(\[(?<words>[0-9]+)\]){0,1}\s+<=\s+(?<label>[a-zA-Z_][a-zA-Z0-9_\-@$!%]*)\s*\(\s*(?<args>[^)]*)/
       IMM_REGEX = / (0x){0,1}(?<imm_val>[0-9A-Fa-f])\.imm/
       attr_reader :original, :minimal
@@ -24,6 +24,18 @@ module MicroCisc
         instruction.gsub(/\s+/, ' ')
       end
 
+      def create_variable(name, arg)
+        if arg.end_with?("mem") || arg.end_with?("reg")
+          name = name[1..-1]
+          arg = arg[0..-4]
+
+          @sugar["$#{name}"] = "#{arg}mem"
+          @sugar["&#{name}"] = "#{arg}reg"
+        else
+          @sugar[name] = arg
+        end
+      end
+
       def parse
         if FUNCTION_REGEX =~ @minimal
           parse_function_call
@@ -31,17 +43,17 @@ module MicroCisc
           match = SUGAR_REGEX.match(@minimal)
           name = match['name']
           if match['op'] == 'as'
-            @sugar[name] = match['param']
+            create_variable(name, match['param'])
             []
           elsif match['op'] == '='
             @minimal = match['param']
             instruction = Instruction.new(@label_generator, minimal, original, @sugar)
             dest = instruction.dest
             if [1, 2, 3].include?(dest)
-              @sugar[name] = "#{dest}.mem"
+              create_variable(name, "#{dest}.mem")
             else
               dest -= 4 if dest > 4
-              @sugar[name] = "#{dest}.reg"
+              create_variable(name, "#{dest}.reg")
             end
             [instruction]
           else

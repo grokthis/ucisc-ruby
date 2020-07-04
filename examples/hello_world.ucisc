@@ -17,8 +17,7 @@
 
 # Setup some simple syntax sugar for easy reference to stack and pc
 $stack as 1.mem
-$&stack as 1.reg
-$pc as 0.reg
+&pc as 0.reg
 
 # Simple conditional syntax sugar
 $zero? as 0.eff
@@ -26,7 +25,7 @@ $not_zero? as 1.eff
 
 Entry:
   # Init stack pointer
-  copy 0.imm $&stack
+  copy 0.imm &stack
 
   # Functions calls reserve space on the stack (the stack size number in brackets)
   # Then they push the return address, followed by the args. The called function
@@ -34,7 +33,7 @@ Entry:
   $stack <= print_string(31.imm, hello.imm)
 
   # halt
-  copy $pc $pc
+  copy &pc &pc
 
 hello:
 
@@ -46,22 +45,20 @@ term_device:
 
 print_string: # (len, *string)
   # reference term control
-  $&term = copy $pc term_device.disp 2.reg
-  $term as 2.mem
-  copy $term $&term
+  &term = copy &pc term_device.disp 2.reg
+  copy $term &term
   # Save to stack for quick restore later
-  copy $&term $stack push
+  copy &term $stack push
 
   # Bank regions 0x0000 and 0x1000
   copy 3.imm 4.reg
   # reference term page
-  compute 0x8.op/zero LSB/ $term 1.imm $&term
+  compute 0x8.op/zero LSB/ $term 1.imm &term
 
   # Bank region 0x1000
   copy 2.imm 4.reg
 
-  $&str = copy $stack 1.imm 3.reg
-  $str as 3.mem
+  &str = copy $stack 1.imm 3.reg
   # Move length to top of stack
   copy $stack 2.imm $stack push
 
@@ -71,21 +68,21 @@ print_string: # (len, *string)
 
   # Loop over string, copy to $term
   {
-    copy $pc break.disp $pc $zero?
+    copy &pc break.disp &pc $zero?
 
     {
       copy $str $term
-      compute 0xA.op/add/ 1.imm $&str
-      compute 0xA.op/add/ 1.imm $&term
+      compute 0xA.op/add/ 1.imm &str
+      compute 0xA.op/add/ 1.imm &term
 
       compute 0xB.op/subtract/ 1.imm $stack
 
-      copy $pc loop.disp $pc $not_zero?
+      copy &pc loop.disp &pc $not_zero?
     }
   }
 
   # restore terminal control pointer
-  copy $stack 1.imm $&term
+  copy $stack 1.imm &term
   # Bank regions 0x0000 and 0x1000
   copy 3.imm 4.reg
   # write length to terminal control
@@ -93,7 +90,7 @@ print_string: # (len, *string)
   # Unbank all regions
   copy 0.imm 4.reg
 
-  copy $&stack 4.imm $&stack
+  copy &stack 4.imm &stack
 
   # Jump return
-  copy $stack $pc pop
+  copy $stack &pc pop

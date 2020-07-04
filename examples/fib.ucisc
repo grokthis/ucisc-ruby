@@ -17,8 +17,7 @@
 
 # Setup some simple syntax sugar for easy reference to stack and pc
 $stack as 1.mem
-$&stack as 1.reg
-$pc as 0.reg
+&pc as 0.reg
 
 # Simple conditional syntax sugar
 $zero? as 0.eff
@@ -27,7 +26,7 @@ $negative? as 2.eff
 
 Entry:
   # Init stack pointer
-  copy 0.imm $&stack
+  copy 0.imm &stack
 
   # Functions calls reserve space on the stack (the stack size number in brackets)
   # Then they push the return address, followed by the args. The called function
@@ -35,16 +34,16 @@ Entry:
   $stack[1] <= fib(6.imm)
 
   # halt
-  copy $pc $pc
+  copy &pc &pc
 
 fib:
   # push n - 1
   compute 0xB.op 1.imm $stack push
   {
     # if negative, n == 0
-    copy $pc break.disp $pc $negative?
+    copy &pc break.disp &pc $negative?
     # if zero, n == 1
-    copy $pc break.disp $pc $zero?
+    copy &pc break.disp &pc $zero?
 
     # n > 1, n - 1 is on the stack
     # push n - 2
@@ -60,16 +59,16 @@ fib:
     copy $stack $stack 6.imm
 
     # cleanup stack
-    copy $&stack 5.imm $&stack
+    copy &stack 5.imm &stack
    
     # Jump return and pop address 
-    copy $stack $pc pop
+    copy $stack &pc pop
   }
 
   # n == 1 or n == 0, return n
   # Save result to return
   copy $stack 1.imm $stack 3.imm
-  copy $&stack 2.imm $&stack
+  copy &stack 2.imm &stack
 
   # Jump return and pop address
-  copy $stack $pc pop
+  copy $stack &pc pop
