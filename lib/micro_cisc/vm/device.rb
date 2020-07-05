@@ -11,6 +11,8 @@ module MicroCisc
     # * 0x4 - Local register with interrupt handler address (read/write)
     # * 0x5 to 0xF - Device type specific
     class Device
+      attr_reader :id
+
       def initialize(id, type, local_blocks, rom_blocks = [])
         @id = id
         @external_read = 0x001F

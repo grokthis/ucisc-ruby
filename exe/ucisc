@@ -4,23 +4,6 @@ require "bundler/setup"
 require "micro_cisc"
 require "byebug"
 
-def run(data)
-  rom = Array.new(256).map { 0 }
-  rom[0...data.size] = data
-  begin
-    terminal = MicroCisc::Vm::TermDevice.new(5)
-    terminal.host_device = 1
-    devices = Array.new(16).map { MicroCisc::Vm::EmptyDevice.new }
-    devices[15] = terminal # first banked device
-    processor = MicroCisc::Vm::Processor.new(1, 256, [rom])
-    processor.devices = devices
-    processor.start(ARGV.include?('-d'))
-  rescue StandardError => e
-    puts "Execution terminated: #{e.message}"
-    puts "  #{e.backtrace.join("\n  ")}"
-  end
-end
-
 if ARGV.length < 1
   puts "Usage:"
   puts "  ucisc <file_name>"
@@ -29,10 +12,14 @@ end
 
 file_name = ARGV.first
 puts "Reading #{file_name}"
-text = File.read(file_name)
-compile = MicroCisc::Compile::Compiler.new(text)
-puts "Writing #{file_name}.bin"
-words = compile.serialize
-puts "Running program with #{words.size * 2} bytes"
-run(compile.serialize)
+compiler = MicroCisc.load(file_name)
+puts "Running program with #{compiler.serialize.size} words"
+
+begin
+  MicroCisc.run(compiler.serialize)
+rescue StandardError => e
+  puts "Execution terminated: #{e.message}"
+  puts "  #{e.backtrace.join("\n  ")}"
+end
+
 puts "Done."

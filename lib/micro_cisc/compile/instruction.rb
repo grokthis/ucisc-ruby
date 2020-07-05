@@ -14,6 +14,10 @@ module MicroCisc
         @src = nil
         @dest = nil
         @sugar = sugar
+        @data = nil
+        @inc = nil
+        @eff = nil
+        @alu_code = nil
         parse_ucisc(minimal)
       end
 
@@ -125,8 +129,6 @@ module MicroCisc
         args = []
         @immediates = []
         @uses_mem_arg = false
-        uses_push = false
-        uses_pop = false
         @source_is_mem = false
         @dest_is_mem = false
 
@@ -147,10 +149,8 @@ module MicroCisc
             @alu_code = validate_alu(parsed, @alu_code)
           elsif parsed.last == 'push'
             @inc = validate_boolean(parsed, @sign)
-            uses_push = true
           elsif parsed.last == 'pop'
             @inc = validate_boolean(parsed, @sign)
-            uses_pop = true
           elsif parsed.last == 'eff'
             @eff = validate_effect(parsed, @eff)
           elsif (parsed.last == 'disp' || parsed.last == 'imm')

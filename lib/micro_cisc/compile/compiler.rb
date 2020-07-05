@@ -20,13 +20,11 @@ module MicroCisc
             statement.parse.each do |instruction|
               if instruction.label?
                 @labels[instruction.label] = address
-                puts "#{line_number}: #{instruction.label}"
               elsif instruction.instruction?
-                @instructions << instruction
+                @instructions << [line_number, instruction]
                 address += 1
-                puts "#{line_number}: 0x#{instruction.encoded.to_s(16).upcase}" + instruction.original
               elsif instruction.data?
-                @instructions += instruction.data
+                @instructions += instruction.data.map { |d| [line_number, d] }
                 line_string = []
                 word_counts = instruction.data.map do |d|
                   if d.is_a?(String)
@@ -38,25 +36,20 @@ module MicroCisc
                   end
                 end
                 address += word_counts.sum
-                puts "#{line_number}: 0x#{line_string.join(' ')}"
               end
             end
           rescue ArgumentError => e
-            puts "Error on line #{line_number}: #{e.message}"
-            puts line
+            MicroCisc.logger.error("Error on line #{line_number}: #{e.message}\n  #{line}")
             errors << [line_number, e, line]
           end
           line_number += 1
         end
 
         if errors.size > 0
-          puts
-          puts
-          puts "Errors found:"
-          puts
-          errors.each do |error|
-            puts "#{error[0]}: #{error[1]}\n  #{error[2]}"
+          errors = errors.map do |error|
+            "#{error[0]}: #{error[1]}\n  #{error[2]}"
           end
+          MicroCisc.logger.error("\n\nErrors found:\n\n#{errors.join("\n")}")
           exit(1)
         end
       end
@@ -66,7 +59,8 @@ module MicroCisc
           begin
             words = []
             dstart = nil
-            @instructions.each do |ins|
+            MicroCisc.logger.info("ADDRESS: INS-WORD  LINE#: SOURCE")
+            @instructions.each do |(line_number, ins)|
               if ins.is_a?(String)
                 address = words.length
                 ins_words = ins.unpack("S*")
@@ -84,16 +78,16 @@ module MicroCisc
               else
                 address = words.length
                 if dstart
-                  puts "#{'%04x' % dstart}-#{'%04x' % (address - 1)}: #{(address - dstart)} words of data"
+                  MicroCisc.logger.info(" 0x#{'%04x' % dstart}: #{(address - dstart)} words of data")
                   dstart = nil
                 end
-                puts "#{'%04x' % address}: 0x#{'%04x' % ins.encoded(@labels, address)}" + ins.original
+                MicroCisc.logger.info(" 0x#{'%04x' % address}: 0x#{'%04x' % ins.encoded(@labels, address)}   #{'% 6d' % line_number}: " + ins.original.gsub("\n", ""))
                 words << ins.encoded(@labels, address)
               end
             end
             if dstart
               address = words.length
-              puts "#{'%04x' % dstart}-#{'%04x' % (address - 1)}: #{(address - dstart)} words of data"
+              MicroCisc.logger.info(" 0x#{'%04x' % dstart}: #{(address - dstart)} words of data")
             end
             words
           end

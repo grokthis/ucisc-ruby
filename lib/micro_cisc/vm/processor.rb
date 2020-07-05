@@ -41,7 +41,8 @@ module MicroCisc
 
       MEM_ARGS            = [1, 2, 3]
 
-      attr_accessor :flags, :pc, :overflow, :control, :debug
+      attr_accessor :flags, :overflow, :debug
+      attr_reader :pc, :control, :count
 
       def initialize(id, local_blocks, rom_blocks = [])
         super(id, 1, local_blocks, rom_blocks)
@@ -52,6 +53,8 @@ module MicroCisc
         @overflow = 0
         @debug = false
         @run = false
+        @pc_modified = false
+        @count = 0
       end
 
       def handle_control_update(address, value)
@@ -326,7 +329,7 @@ module MicroCisc
 
       def run
         @t0 = Time.now
-        count = 0
+        @count = 0
         while(@run) do
           word = read_mem(@id, @pc, true)
           if @debug
@@ -335,7 +338,7 @@ module MicroCisc
           end
           special = exec_instruction(word)
           if special != 0
-            halt(count) if special == 1
+            halt if special == 1
             @debug = true if special == 2
           end
           if @pc_modified
@@ -343,7 +346,7 @@ module MicroCisc
           else
             @pc += 1
           end
-          count += 1
+          @count += 1
           # if count & 0xFF == 0
           #   read_from_processor
           # end
@@ -357,27 +360,27 @@ module MicroCisc
         exit(1) if /exit/.match(command)
         @debug = true if /debug|n|next/.match(command)
         @debug = false if /c|continue/.match(command)
-        puts stack_string if /stack/.match(command)
+        MicroCisc.logger.info(stack_string) if /stack/.match(command)
         byebug if /break/.match(command)
       end
 
       def format_data(data)
-        data.map { |w| '%04x' % w }.join(' ').gsub(/(([0-9A-Za-z]{4} ){16})/, "\\1\n")
+        data.map { |w| '%04X' % w }.join(' ').gsub(/(([0-9A-Za-z]{4} ){16})/, "\\1\n")
       end
 
-      def halt(count)
+      def halt
         delta = (Time.now - @t0)
-        puts("HALT: #{count} instructions in #{delta}s")
-        puts("Stack: " + stack_string)
+        MicroCisc.logger.info("HALT: #{@count} instructions in #{delta}s")
+        MicroCisc.logger.info("Stack: " + stack_string)
 
         @run = false
       end
 
       def stack_string
-        str = ""
         address = @registers[1] & 0xFFFF
+        str = "#{'%04X' % address} => "
         while(address > 0xFF00 && address < 0x10000 && address - @registers[1] < 10)
-          str += "#{'%04x' % address}: #{'%04x' % read_mem(@id, address)} "
+          str += "0x#{'%04X' % read_mem(@id, address)} "
           address += 1
         end
         str
