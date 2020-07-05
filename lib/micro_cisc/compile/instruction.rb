@@ -213,7 +213,7 @@ module MicroCisc
           min = 0
           max = (2 << @bit_width) - 1
         else
-          magnitude = 2 << (@bit_width - 1)
+          magnitude = 1 << (@bit_width - 1)
           min = magnitude * -1
           max = magnitude - 1
         end
