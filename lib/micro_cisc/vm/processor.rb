@@ -379,7 +379,7 @@ module MicroCisc
       def stack_string
         address = @registers[1] & 0xFFFF
         str = "#{'%04X' % address} => "
-        while(address > 0xFF00 && address < 0x10000 && address - @registers[1] < 10)
+        while(address > 0xFF00 && address < 0x10000 && address - (0xFFFF & @registers[1]) < 10)
           str += "0x#{'%04X' % read_mem(@id, address)} "
           address += 1
         end
