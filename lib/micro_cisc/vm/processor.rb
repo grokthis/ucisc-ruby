@@ -55,6 +55,7 @@ module MicroCisc
         @run = false
         @pc_modified = false
         @count = 0
+        @clocks_per_second = 200_000
       end
 
       def handle_control_update(address, value)
@@ -134,13 +135,13 @@ module MicroCisc
       def source_value(source, immediate)
         case source
         when 0
-          @pc + immediate
+          (@pc + immediate) & 0xFFFF
         when 1,2,3
-          read_mem(@id, @registers[source] + immediate)
+          read_mem(@id, (@registers[source] + immediate) & 0xFFFF)
         when 4
           immediate
         else
-          @registers[source - 4] + immediate
+          (@registers[source - 4] + immediate) & 0xFFFF
         end
       end
 
@@ -149,7 +150,7 @@ module MicroCisc
         when 0
           @pc
         when 1,2,3
-          read_mem(@id, @registers[destination] + immediate)
+          read_mem(@id, (@registers[destination] + immediate) & 0xFFFF)
         when 4
           @control
         else
@@ -177,7 +178,14 @@ module MicroCisc
         store_result(result, source, destination, immediates, push, 0)
 
         # Detect halt instruction
-        return 1 if immediates.first == 0 && source == 0 && destination == 0
+        if immediates.first == 0 && source == 0 && destination == 0
+          if alu == 0
+            return 1
+          else
+            @pc += 1
+            return 2
+          end
+        end
         0
       end
 
@@ -347,9 +355,12 @@ module MicroCisc
             @pc += 1
           end
           @count += 1
-          # if count & 0xFF == 0
-          #   read_from_processor
-          # end
+
+          allowed_count = (Time.now - @t0) * @clocks_per_second
+          while @count >= allowed_count
+            sleep(1.0 / @clocks_per_second)
+            allowed_count = (Time.now - @t0) * @clocks_per_second
+          end
         end
       end
 
@@ -440,7 +451,7 @@ module MicroCisc
         ins = is_copy ? 'copy' : 'compute'
 
 
-        "Stack: #{stack_string}\n#{ins} #{alu}#{src} #{imm0} #{dest} #{imm1}#{eff} #{push}# value: #{value} (0x#{'%04x' % value}), result: #{result} (0x#{'%04x' % result}), #{'not ' if !store}stored"
+        "Stack: #{stack_string}\n#{ins} #{alu}#{src} #{imm0} #{dest} #{imm1}#{eff} #{push}# value: #{value} (0x#{'%04x' % (value & 0xFFFF)}), result: #{result} (0x#{'%04x' % (result & 0xFFFF)}), #{'not ' if !store}stored"
       end
     end
   end

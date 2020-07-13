@@ -29,6 +29,8 @@ Gem::Specification.new do |spec|
   spec.add_runtime_dependency "byebug"
   spec.add_runtime_dependency "tty-screen"
   spec.add_runtime_dependency "gtk2"
+  spec.add_runtime_dependency "chunky_png"
+  spec.add_runtime_dependency "bundler"
 
   spec.add_development_dependency "rake"
   spec.add_development_dependency "minitest"

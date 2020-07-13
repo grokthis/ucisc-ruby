@@ -4,21 +4,30 @@ module MicroCisc
     #
     # From the docs, the control word layout is as follows:
     #
-    # * 0x0 - Device ID, read only. Unique system wide.
-    # * 0x1 - Bank address (MSB) | Device type (LSB)
-    # * 0x2 - Bus access device ID
-    # * 0x3 - Interrupt code (MSB) | Device status (LSB)
-    # * 0x4 - Local register with interrupt handler address (read/write)
-    # * 0x5 to 0xF - Device type specific
+    # * 0x0 - Device ID - read only. Unique system wide.
+    # * 0x1 - Local bank block (MSB) | Device type (LSB) - read only
+    # * 0x2 - Init device ID - read only if set, writable if 0 or by init device
+    # * 0x3 - Accessed device block address (LSB) - writable by init device
+    # * 0x4 - <Reserved> (MSB) | Device status (LSB)
+    # * 0x5 - Local register with interrupt handler address (read/write)
+    # * 0x6 to 0xF - Device type specific (see below)
     class Device
+      TYPE_INVALID = 0
+      TYPE_PROCESSOR = 1
+      TYPE_BLOCK_MEMORY = 2
+      TYPE_BLOCK_IO = 3
+      TYPE_SERIAL = 4
+      TYPE_HID = 5
+      TYPE_TERMINAL = 6
+
       attr_reader :id
 
       def initialize(id, type, local_blocks, rom_blocks = [])
         @id = id
-        @external_read = 0x001F
-        @privileged_read = 0x001F
-        @privileged_write = 0x0010
-        @internal_write = 0x000C
+        @external_read = 0x003F
+        @privileged_read = 0x003F
+        @privileged_write = 0x002C
+        @internal_write = 0x0010
 
         @local_blocks = local_blocks
         rom_blocks.each { |block| block.freeze }
@@ -31,6 +40,7 @@ module MicroCisc
         @control_mem = Array.new(16).map { 0 }
         @control_mem[0] = id
         @control_mem[1] = type & 0xFF
+        @control_mem[2] = 0
 
         @devices = [self]
       end
@@ -44,17 +54,16 @@ module MicroCisc
         @devices.each_with_index { |device, index| device.bank_index = index }
       end
 
-      def source_halted(source_device_id)
-        @control_mem[2] = 0 if source_device_id == @control_mem[2]
-      end
-
       def write_control(source_device_id, address, value)
         address = address & 0xF
         return if address == 0
         if source_device_id == @id
           return if (1 << (address - 1)) & @internal_write == 0
           @control_mem[address] = value
-        elsif source_device_id == @control_mem[2]
+        elsif @control_mem[2] == 0 || source_device_id == @control_mem[2]
+          # Special case where a processor can "claim" the device
+          @control_mem[2] = source_device_id
+
           return if (1 << (address - 1)) & @privileged_write == 0
           @control_mem[address] = value
           handle_control_update(address, value)
@@ -62,8 +71,10 @@ module MicroCisc
       end
 
       def read_control(source_device_id, address)
-        return @control_mem[0] if address == 0
-        if source_device_id == @id || source_device_id == @control_mem[2]
+        if address == 0
+          handle_control_read(address)
+          @control_mem[0]
+        elsif source_device_id == @id || source_device_id == @control_mem[2]
           return 0 if (1 << (address - 1)) & @privileged_read == 0
           handle_control_read(address)
           @control_mem[address]
@@ -106,11 +117,11 @@ module MicroCisc
             @local_mem[page][address & 0xFF] = value
           end
         elsif !banked && source_device_id == @id
-          page = (address & 0xFF00) >> 8
-          @local_mem[page][address & 0xFF] = value
+          block = (address & 0xFF00) >> 8
+          @local_mem[block][address & 0xFF] = value
         elsif source_device_id == @control_mem[2]
-          page = (@control_mem[3] & 0xFF00) >> 8
-          @local_mem[page][address & 0xFF] = value
+          block = @control_mem[3]
+          @local_mem[block][address & 0xFF] = value if @local_mem[block]
         end
       end
 

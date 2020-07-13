@@ -1,0 +1,101 @@
+##########################
+# Standard uCISC Library #
+##########################
+# Contains the following functions:
+#
+# * $&device_control <= init_device($device_index)
+# * mem_copy(&source, &target, $len)
+#
+
+################
+# Syntax Setup #
+################
+&stack as 1.reg
+&pc as 0.reg
+&banking as 4.reg
+
+# Conditionals
+$zero? as 0.eff
+$not_zero? as 1.eff
+$negative? as 2.eff
+
+# Compute Ops
+$invert as 0x0.op
+$and as 0x1.op
+$or as 0x2.op
+$xor as 0x3.op
+$increment as 0x4.op
+$shift_left as 0x5.op
+$shift_right as 0x6.op
+$swap_bytes as 0x7.op
+$high_byte as 0x8.op # zero least significant byte
+$low_byte as 0x9.op # zero most significant byte
+$add as 0xA.op
+$subtract as 0xB.op
+$multiply as 0xC.op
+$divide as 0xD.op
+$add_overflow as 0xE.op
+$mask_to_overflow as 0xF.op
+
+################
+# Main Section #
+################
+&stack as copy 0.imm 1.reg
+
+$stack <= Entry()
+
+Entry:
+copy &pc &pc
+
+# $stack[$&device_control] <= init_device($device_index)
+# 
+# Takes a device index and caclulates the control word for that device. It
+# sets the init_device of the targeted device to the current processor, giving
+# subsequent code the ability to interact with the banked memory and controls.
+init_device: # $&device_control <= ($device_index)
+  $device_index, $&return, $&device_control = $stack
+
+  &shift_amount as copy 4.imm 2.reg
+  $&control = compute $shift_left &shift_amount $device_index
+  copy $&control $&device_control
+
+  &device_control = copy $&control 2.reg
+  $device_control.init as $device_control 2.imm
+  &self = copy 2.imm 3.reg
+
+  copy 1.imm &banking
+  copy $self $device_control.init
+  copy 0.imm &banking
+
+  copy &&return &stack
+  copy $&return &pc pop
+
+# $stack <= mem_copy(&source, &target, $len)
+#
+# Copies $len words from $source to $target. Note, no changes to banking are
+# made, so it will respect any banking setup prior to calling the function.
+mem_copy:
+  $len, $&target, $&source, $&return = $stack
+
+  &source as copy $&source 2.reg
+  &target as copy $&target 3.reg
+
+  compute $add 0.imm $len # sets the flags
+  # Loop over string, copy to $term
+  {
+    copy &pc break.disp &pc $zero?
+
+    {
+      copy $source $target
+      compute $add 1.imm &source
+      compute $add 1.imm &target
+
+      compute 0xB.op/subtract/ 1.imm $len
+
+      copy &pc loop.disp &pc $not_zero?
+    }
+  }
+
+  copy &&return &stack
+  copy $&return &pc pop
+

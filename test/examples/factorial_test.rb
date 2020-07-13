@@ -1,8 +1,11 @@
 require "test_helper"
 
 class FactorialExampleTest < Minitest::Test
+  SOURCE_FILES = [
+    "examples/factorial.ucisc"
+  ]
   def setup
-    @compiler = MicroCisc.load("examples/factorial.ucisc")
+    @compiler = MicroCisc.load(SOURCE_FILES)
     @processor = MicroCisc.run(@compiler.serialize)
   end
 

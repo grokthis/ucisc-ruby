@@ -1,8 +1,10 @@
 PATH
   remote: .
   specs:
-    ucisc (0.1.3)
+    ucisc (0.1.4)
+      bundler
       byebug
+      chunky_png
       gtk2
       tty-screen
 
@@ -18,6 +20,7 @@ GEM
     cairo-gobject (3.4.3)
       cairo (>= 1.16.2)
       glib2 (= 3.4.3)
+    chunky_png (1.3.11)
     gdk_pixbuf2 (3.4.3)
       gio2 (= 3.4.3)
     gio2 (3.4.3)

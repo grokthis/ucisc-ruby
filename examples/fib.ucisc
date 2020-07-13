@@ -1,74 +1,79 @@
 # Compute Fibonacci numbers
 #
-# By default, computes fib(8) == 21. Change the imm on line 24
-# to compute other numbers. fib(0x18) is the maximum value that
-# will compute correctly. fib(0x19) and up will overflow 16-bits
-# when adding the final result, but will execute an equivalent
-# number of instructions.
+# By default, computes fib(8) == 21. Change the immediate value in the fib
+# function call to compute other numbers. fib(24.imm) is the maximum value that
+# will compute correctly. fib(25.imm) and up will overflow 16-bits when adding
+# the final result, but will still terminate.
 #
 # To run:
 #   $ exe/ucisc examples/fib.ucisc
 #
-# Type 'break' when you hit the breakpoint, then `load(register(1))`
-# to view the result on the stack
-#
-# More instructions on the compiler and debugger are in the README.md
-# Or use GitHub https://github.com/grokthis/ucisc-ruby#usage
+# Stack result should be:
+# INFO: Stack: FFFF => 0x0015
 
-# Setup some simple syntax sugar for easy reference to stack and pc
+################
+# Syntax Setup #
+################
 $stack as 1.mem
 &pc as 0.reg
+
+# ALU op codes
+$add as 0xA.op
+$subtract as 0xB.op
 
 # Simple conditional syntax sugar
 $zero? as 0.eff
 $not_zero? as 1.eff
 $negative? as 2.eff
 
-Entry:
-  # Init stack pointer
-  copy 0.imm &stack
+################
+#  Code Entry  #
+################
+copy 0.imm &stack
 
-  # Functions calls reserve space on the stack (the stack size number in brackets)
-  # Then they push the return address, followed by the args. The called function
-  # is expected to remove the return address and args from the stack before returning
-  $stack[1] <= fib(6.imm)
+$stack[1] <= fib(8.imm)
 
-  # halt
-  copy &pc &pc
+# halt
+copy &pc &pc
 
+################
+# Main Section #
+################
 fib:
+  $n, $return, $result = $stack
   # push n - 1
-  compute 0xB.op 1.imm $stack push
+  $n_1 = compute $subtract 1.imm $n push
   {
     # if negative, n == 0
     copy &pc break.disp &pc $negative?
     # if zero, n == 1
     copy &pc break.disp &pc $zero?
 
-    # n > 1, n - 1 is on the stack
-    # push n - 2
-    compute 0xB.op 1.imm $stack push
+    $n_2 = compute $subtract 1.imm $n_1 push
 
     # Recurse for fib(n-1) and fib(n-2)
-    $stack[1] <= fib($stack 1.imm)
-    $stack[1] <= fib($stack 1.imm)
+    $stack[1] <= fib($n_1)
+    $stack[1] <= fib($n_2)
+    $fib_n_2, $fib_n_1 = $stack
 
-    compute 0xA.op $stack 1.imm $stack
+    $fib_n = compute $add $fib_n_1 $fib_n_2
 
-    #copy to return
-    copy $stack $stack 6.imm
+    #copy fib(n) to result
+    copy $fib_n $result
 
-    # cleanup stack
-    copy &stack 5.imm &stack
+    # Pop stack to return
+    copy &return &stack
    
     # Jump return and pop address 
-    copy $stack &pc pop
+    copy $return &pc pop
   }
+  # Need reset vars, after block messes with stack
+  $n_1, $n, $return, $result = $stack
 
   # n == 1 or n == 0, return n
   # Save result to return
-  copy $stack 1.imm $stack 3.imm
-  copy &stack 2.imm &stack
+  copy $n $result
+  copy &return &stack
 
   # Jump return and pop address
-  copy $stack &pc pop
+  copy $return &pc pop

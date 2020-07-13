@@ -6,14 +6,17 @@ require "byebug"
 
 if ARGV.length < 1
   puts "Usage:"
-  puts "  ucisc <file_name>"
+  puts "  ucisc <file_name> [<file_name> ...]"
   exit(0)
 end
 
-file_name = ARGV.first
-puts "Reading #{file_name}"
-compiler = MicroCisc.load(file_name)
-puts "Running program with #{compiler.serialize.size} words"
+file_names = ARGV.reject { |name| name.start_with?("-") }
+puts "Reading #{file_names.join(" ")}"
+compiler = MicroCisc.load(file_names)
+
+instructions = compiler.command_count
+size = compiler.serialize.size
+puts "Running program with #{instructions} instructions compiled to #{size} words"
 
 begin
   MicroCisc.run(compiler.serialize)

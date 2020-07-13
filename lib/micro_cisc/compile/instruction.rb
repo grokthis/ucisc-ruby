@@ -1,19 +1,20 @@
 module MicroCisc
   module Compile
     class Instruction
-      attr_reader :label, :instruction, :data, :imm, :sign, :dir, :reg, :dest, :original, :minimal
+      COMPONENT_WITH_QUOTES_REGEX = /(?<component>[^\s"']+|"((\\"|[^"])*)")/
+      attr_reader :label, :operation, :data, :immediates, :sign, :dir, :src, :dest, :original, :minimal, :inc
 
-      def initialize(label_generator, minimal, original, sugar)
+      def initialize(label_generator, minimal, original, statement)
         @label_generator = label_generator
         @original = original
         @label = nil
         @operation = nil
         @sign = nil
         @dir = nil
-        @imm = nil
+        @immediates = []
         @src = nil
         @dest = nil
-        @sugar = sugar
+        @statement = statement
         @data = nil
         @inc = nil
         @eff = nil
@@ -38,7 +39,7 @@ module MicroCisc
       end
 
       def parse_ucisc(minimal_instruction)
-        @components = minimal_instruction.split(/\s/)
+        @components = minimal_instruction.scan(COMPONENT_WITH_QUOTES_REGEX).flatten
 
         return if @components.empty?
 
@@ -57,6 +58,28 @@ module MicroCisc
 
         if @components.first == '%'
           @components.shift
+          @components = @components.map do |component|
+            if component =~ /"(\\"|[^"])*"/
+              # Remove surrounding quotes
+              component = component[1...(component.length - 1)]
+              component = component.gsub("\\n","\n")
+              component = component.gsub("\\\"","\"")
+              hex = []
+              offset = 0
+              while(offset < component.length)
+                pair = component[offset...(offset + 2)]
+                pair = pair.bytes
+                pair << 0 if pair.length < 2
+                word = pair.pack("C*").unpack("S>").last
+                hex_word = "%04X" % word
+                hex << hex_word
+                offset += 2
+              end
+              component = ["%04X" % component.length] + hex
+            else
+              component
+            end
+          end.flatten
           @data = @components.map do |component|
             if match = /(?<name>[^\s]+)\.(?<type>imm|disp)/.match(component)
               [match['name'], match['type']]
@@ -98,7 +121,7 @@ module MicroCisc
         raise ArgumentError, "Duplicate #{component.last} value" if current
         code = component.first
         unless code >= 0 && code < 16
-          raise ArgumentError, "Value of #{component.last} must be between 0x0 and 0xF instead of #{component.first.to_s(16).upcase}"
+          raise ArgumentError, "Value of #{component.last} must be between 0x0 and 0xF instead of 0x#{component.first.to_s(16).upcase}"
         end
         component.first
       end
@@ -135,8 +158,10 @@ module MicroCisc
         while components.size > 0
           to_parse = components.shift
           if(to_parse.start_with?('$') || to_parse.start_with?('&'))
-            raise ArgumentError, "Missing ref #{to_parse}" unless @sugar[to_parse]
-            to_parse = @sugar[to_parse]
+            raise ArgumentError, "Missing ref #{to_parse}" unless @statement.get_var(to_parse)
+            to_parse = @statement.get_var(to_parse)
+            components = to_parse.split(/\s/) + components
+            to_parse = components.shift
           end
           parsed = parse_component(to_parse)
           if ['val', 'reg', 'mem'].include?(parsed.last)
@@ -198,7 +223,9 @@ module MicroCisc
           end
         end
 
-        if @immediates.last != 0 && (!@source_is_mem || !@dest_is_mem)
+        if @immediates.last != 0 && @operation == 'alu'
+          raise ArgumentError, "Destination immediate is not allowed for compute instructions"
+        elsif @immediates.last != 0 && (!@source_is_mem || !@dest_is_mem)
           raise ArgumentError, "Destination immediate is only allowed when both arguments are mem args"
         end
 
@@ -208,18 +235,18 @@ module MicroCisc
 
       def validate_immediate(value, index)
         width = @bit_width
-        width = width / 2 if @source_is_mem && @dest_is_mem
+        width = width / 2 if @operation == 'copy' && @source_is_mem && @dest_is_mem
         if index == 0 && @source_is_mem || index == 1 && @dest_is_mem
           min = 0
-          max = (2 << @bit_width) - 1
+          max = (1 << width) - 1
         else
-          magnitude = 1 << (@bit_width - 1)
+          magnitude = 1 << (width - 1)
           min = magnitude * -1
           max = magnitude - 1
         end
         if (value < min || value > max)
           signed = @source_is_mem ? 'unsigned' : 'signed'
-          raise ArgumentError, "Immediate max bits is #{@bit_width} #{signed}; value must be between #{min} and #{max} instead of #{value}"
+          raise ArgumentError, "Immediate max bits is #{width} #{signed}; value must be between #{min} and #{max} instead of #{value}"
         end
       end
 

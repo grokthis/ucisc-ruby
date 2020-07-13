@@ -1,96 +1,87 @@
-# A recursive factorial algorithm
-# Inspired by the SubX example near the bottom of this post:
-# http://akkartik.name/post/mu-2019-1
-#
-# The goal is to compare the implementation of the uCISC ISA to x86
-# as well as roughly see how things line up with SubX and look for
-# the coming MuCISC goals
+# Print hello world to the console
 #
 # To run:
-#   $ exe/ucisc examples/factorial.ucisc
+#   $ exe/ucisc examples/hello_world.ucisc core/stdlib.ucisc
 #
-# Type 'break' when you hit the breakpoint, then `load(register(1))`
-# to view the result on the stack
+# The stack should be empty when complete. It prints the following:
 #
-# More instructions on the compiler and debugger are in the README.md
-# Or use GitHub https://github.com/grokthis/ucisc-ruby#usage
+# Hello, world! uCISC is here!
 
-# Setup some simple syntax sugar for easy reference to stack and pc
-$stack as 1.mem
+################
+# Syntax Setup #
+################
 &pc as 0.reg
+&banking as 4.reg
 
-# Simple conditional syntax sugar
+# Conditionals
 $zero? as 0.eff
 $not_zero? as 1.eff
 
-Entry:
-  # Init stack pointer
-  copy 0.imm &stack
+# Compute Ops
+$shift_left as 0x5.op
+$shift_right as 0x6.op
+$high_byte as 0x8.op # zero least significant byte
+$add as 0xA.op
 
-  # Functions calls reserve space on the stack (the stack size number in brackets)
-  # Then they push the return address, followed by the args. The called function
-  # is expected to remove the return address and args from the stack before returning
-  $stack <= print_string(31.imm, hello.imm)
+################
+#  Code Entry  #
+################
+&stack as copy 0.imm 1.reg
 
-  # halt
-  copy &pc &pc
+$stack[1] <= init_device(16.imm)
+$&device_control = $stack
 
+$stack <= print_string($&device_control, hello.imm)
+
+# pop device control
+copy &&device_control 1.imm &stack
+
+# halt
+copy &pc &pc
+
+################
+# Main Section #
+################
 hello:
+% "\nHello, world! uCISC is here!\n\n"
 
-# "\nHello, world! uCISC is here!\n\n" in hex
-% 0A48 656C 6C6f 2C20 776F 726C 6421 2075 4349 5343 2069 7320 6865 7265 210A 0A00
+print_string: # (&device_control, &string)
+  $&string, $&device_control, $&return = $stack
 
-term_device:
-% 0100
+  &device_control = copy $&device_control 3.reg
+  $&device_bank = $device_control 1.imm
 
-print_string: # (len, *string)
-  # reference term control
-  &term = copy &pc term_device.disp 2.reg
-  copy $term &term
-  # Save to stack for quick restore later
-  copy &term $stack push
+  #bank control segment
+  copy 1.imm &banking
+  &stdout as compute $high_byte $&device_bank 3.reg
+  #bank stdout buffer segment
+  copy 2.imm &banking
 
-  # Bank regions 0x0000 and 0x1000
-  copy 3.imm 4.reg
-  # reference term page
-  compute 0x8.op/zero LSB/ $term 1.imm &term
+  &string as copy $&string 2.reg
+  $string.len, $string.data = $string
 
-  # Bank region 0x1000
-  copy 2.imm 4.reg
+  # Length is in bytes, add 1 and divide by 2 to get word len
+  $word_len = copy $string.len $stack push
+  compute $add 1.imm $word_len
+  compute $shift_right 1.imm $word_len
 
-  &str = copy $stack 1.imm 3.reg
-  # Move length to top of stack
-  copy $stack 2.imm $stack push
+  $stack <= mem_copy(&string.data, &stdout, $word_len)
 
-  # Len is in bytes, add 1 and divide by 2 to get word len
-  compute 0xA.op/add/ 1.imm $stack
-  compute 0x6.op/shift >>/ 1.imm $stack
+  &string as copy $&string 2.reg
+  $string.len = $string
+  &device_control = copy $&device_control 3.reg
+  $stdout.read_count as $device_control 6.imm
+  # we need to put $string.len on the stack so banking doesn't make it invisible
+  $len = copy $string.len $stack push
 
-  # Loop over string, copy to $term
-  {
-    copy &pc break.disp &pc $zero?
-
-    {
-      copy $str $term
-      compute 0xA.op/add/ 1.imm &str
-      compute 0xA.op/add/ 1.imm &term
-
-      compute 0xB.op/subtract/ 1.imm $stack
-
-      copy &pc loop.disp &pc $not_zero?
-    }
-  }
-
-  # restore terminal control pointer
-  copy $stack 1.imm &term
-  # Bank regions 0x0000 and 0x1000
-  copy 3.imm 4.reg
+  #bank control segment
+  copy 1.imm &banking
   # write length to terminal control
-  copy $stack 3.imm $term 5.imm
+  copy $len $stdout.read_count
   # Unbank all regions
-  copy 0.imm 4.reg
-
-  copy &stack 4.imm &stack
+  copy 0.imm &banking
 
   # Jump return
-  copy $stack &pc pop
+  copy &&return &stack
+  copy $&return &pc pop
+

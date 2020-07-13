@@ -2,14 +2,10 @@ module MicroCisc
   module Vm
     class TermDevice < Device
       def initialize(device_id)
-        super(device_id, 9, 1)
+        super(device_id, Device::TYPE_TERMINAL, 1)
         # Init device specific read/write controls
-        @privileged_read = @privileged_read | 0xE0
-        @privileged_write = @privileged_write | 0x20
-      end
-
-      def host_device=(device_id)
-        @control_mem[2] = device_id
+        @privileged_read = @privileged_read | 0x1C0
+        @privileged_write = @privileged_write | 0x40
       end
 
       def handle_control_read(address)
@@ -22,7 +18,7 @@ module MicroCisc
       end
 
       def handle_control_update(address, value)
-        if address == 5
+        if address == 6
           # value is number of bytes to send
           words = (value + 1) / 2
           string = @local_mem[0][0...words].pack("S>*")[0...value]

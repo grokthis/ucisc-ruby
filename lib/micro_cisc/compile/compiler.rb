@@ -1,8 +1,11 @@
 module MicroCisc
   module Compile
     class Compiler
+      attr_reader :command_count
+
       def initialize(text)
         @text = text
+        @command_count = 0
         parse
       end
 
@@ -11,17 +14,21 @@ module MicroCisc
         @instructions = []
         address = 0
         @labels = {}
-        @sugar = {}
+        @indexed_vars = {}
+        @equivalents = {}
         errors = []
         lgen = MicroCisc::Compile::LabelGenerator.new
+        @command_count = 0
         @text.each_line do |line|
           begin
-            statement = MicroCisc::Compile::Statement.new(lgen, line, @sugar)
+            statement = MicroCisc::Compile::Statement.new(lgen, line, @indexed_vars, @equivalents)
+            command = false
             statement.parse.each do |instruction|
               if instruction.label?
                 @labels[instruction.label] = address
               elsif instruction.instruction?
                 @instructions << [line_number, instruction]
+                command = true
                 address += 1
               elsif instruction.data?
                 @instructions += instruction.data.map { |d| [line_number, d] }
@@ -38,6 +45,7 @@ module MicroCisc
                 address += word_counts.sum
               end
             end
+            @command_count += 1 if command
           rescue ArgumentError => e
             MicroCisc.logger.error("Error on line #{line_number}: #{e.message}\n  #{line}")
             errors << [line_number, e, line]

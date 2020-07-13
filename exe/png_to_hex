@@ -1,0 +1,38 @@
+#!/usr/bin/env ruby
+
+require "bundler/setup"
+require "chunky_png"
+require "byebug"
+
+if ARGV.size < 2
+  puts "Usage:"
+  puts "  png_to_hex <input_file> <output_file>"
+  exit(0)
+end
+
+image = ChunkyPNG::Image.from_file(ARGV.first)
+rows = []
+hex = []
+image.pixels.each do |pixel|
+  rgba = "%08X" % pixel
+  pixel = pixel >> 8
+  b = (((pixel & 0xFF) + 8) & 0xF0) >> 4
+  pixel = pixel >> 8
+  g = (((pixel & 0xFF) + 8) & 0xF0) >> 4
+  pixel = pixel >> 8
+  r = (((pixel & 0xFF) + 8) & 0xF0) >> 4
+
+  color = (r << 8 | g << 4 | b )
+  hex << "%04X" % color
+
+  if hex.size == 16
+    rows << "% #{hex.join(" ")}"
+    hex = []
+  end
+end
+
+rows << "% #{hex.join(" ")}" if hex.size > 0
+hex = []
+
+File.open(ARGV.last, 'w') { |file| file.write(rows.join("\n")) }
+

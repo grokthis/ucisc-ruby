@@ -1,0 +1,261 @@
+# Draws an image on the screen at 16, 16 (from the top left)
+# Basic algorithm:
+# *Setup*
+#  1. The image data is part of the compiled output, but it
+#     must be paged in. Processors only get the first page
+#     of a task by default, so programs need to load themselves
+#     into local memory first.
+#  2. Paint the image
+#
+# *Painting*
+# For each line in the image:
+#  1. Calculate page offset and count for a image raster line
+#  2. Page in the relevant pages from main memory. Note, this
+#     isn't strictly necessary for this example as no other
+#     code is drawing to the screen, but it's a moral victory.
+#  3. Copy the memory from the image data region to the proper
+#     location in the paged memory.
+#  4. Page the memory back to main memory in the proper location.
+#     Since the video memory is mapped to the main memory at a
+#     specific location, this causes the line to draw immediately.
+#
+# The program halts when done and the CPU will idle.
+#
+# Notes:
+#  * Double buffering is not implemented and the necessary hardware
+#    is not emulated. So, the screen will "tear" if you don't draw
+#    fast enough.
+#  * In practice, the CPU can definitely outrun the paging mechanisms.
+#    I got some nice partial images when I turned off access blocking
+#    to pages that were in the process of paging.
+#  * This page in/page out mechanism kills at least half your available
+#    performance. It would be better to load multiple lines worth of
+#    pages at once, draw on them and page them out. That's a harder
+#    algorithm but in theory could preserve most of your performance.
+#    This is just a proof of concept so I didn't do that.
+#
+# Conventions:
+# 
+# I put psuedo code in the comments for each instruction. Some notes
+# about reading them and other things to know:
+# 
+#  * `var name = value` - var is created on the stack
+# 
+#  * Registers are generally treated as pointers
+# 
+#  * I tried to use C pointer semantics for comments. It's not perfect
+#  because some of the dereferencing is a bit different here and it's not
+#  checked by a compiler or running code so take them with a grain of salt.
+# 
+#  * The one exception is occaisionally they get loaded with an increment
+#  value. Sometimes you just need to add one real fast.
+# 
+#  * You can generally easily count stack offsets by counting 1.push args
+# 
+#  * Don't forget to add offsets for any vars returned by functions on
+#  the stack. I commented function return values for easy reference.
+# 
+#  * r1 is the stack, don't use it for anything else.
+# 
+#  * r2, r3 are not preserved by function calls, any one can do anything
+#  with them. Assume they are garbage after a function call.
+# 
+#  * One variable needed on every loop iteration is always on the top of
+#  the stack for easy access.
+# 
+#  * I found calculating before the loop to be pretty efficient. A quick
+#  subtract will set the zero flag and you can jump over the break easily.
+# 
+#  * The order is heavily influenced by the limits of function call
+#  immediate values. Notice the _page hack right off the bat.
+# 
+#  * I'll be updating function calls to handle this more gracefully.
+#
+#  * `calculate_page_offset` uses 32-bit math. Check it out.
+#
+# To run:
+#   $ exe/ucisc examples/image.ucisc
+#
+# Then: view the image. It works!!
+#
+# Instructions on the compiler and debugger are in the README.md
+# Or use GitHub https://github.com/grokthis/ucisc-ruby#usage
+
+################
+# Syntax Setup #
+################
+&stack as 1.reg
+&pc as 0.reg
+&banking as 4.reg
+
+# Conditionals
+$zero? as 0.eff
+$not_zero? as 1.eff
+$negative? as 2.eff
+
+# Compute Ops
+$invert as 0x0.op
+$and as 0x1.op
+$or as 0x2.op
+$xor as 0x3.op
+$increment as 0x4.op
+$shift_left as 0x5.op
+$shift_right as 0x6.op
+$swap_bytes as 0x7.op
+$high_byte as 0x8.op # zero least significant byte
+$low_byte as 0x9.op # zero most significant byte
+$add as 0xA.op
+$subtract as 0xB.op
+$multiply as 0xC.op
+$divide as 0xD.op
+$add_overflow as 0xE.op
+$mask_to_overflow as 0xF.op
+
+################
+#  Code Entry  #
+################
+Entry:
+$&return = $stack
+
+$stack[1] <= stdlib_init_device(17.imm)
+$&device_control = $stack
+
+$y = copy 10.imm $stack push
+$x = copy 0.imm $stack push
+{
+  $stack <= paint_image(&pc image.disp, $x, $y, $&device_control)
+  $stack <= paint_image(&pc blank_left.disp, $x, $y, $&device_control)
+  
+  compute $add 1.imm $x
+  compute $low_byte $x $x
+
+  copy &pc loop.disp &pc
+}
+
+# Image:struct
+# pixels:*word[]
+# width:int
+# height:int
+image:
+% image.data.imm
+% 0040 # width: 64
+% 0030 # height: 48
+
+blank_left:
+% 2000
+% 0001 # width: 1
+% 0030 # height: 48
+
+stdlib_init_device:
+  copy &pc init_device.disp &pc
+stdlib_mem_copy:
+  copy &pc mem_copy.disp &pc
+
+# $stack <= paint_image($&image, $x, $y, $&screen_device)
+paint_image:
+  $&screen_device, $y, $x, $&image, $&return = $stack
+
+  $screen_device as 3.mem
+  copy $&screen_device &screen_device
+  $screen_device.w, $screen_device.h = $screen_device 6.imm
+
+  &image = copy $&image 2.reg
+  $image.data, $image.width, $image.height as $image
+
+  $c_row = copy 0.imm $stack push
+  $c_y = copy $y $stack push
+  $end_y = copy $y $stack push
+  compute $add $image.height $end_y
+
+  # Cap $end_y to screen height
+  copy 1.imm &banking
+  $max = copy $screen_device.h $stack push
+  $diff = compute $subtract $end_y $max
+  compute $multiply -1.imm $diff
+  { # if end_y > screen.height
+    copy &pc break.disp &pc $negative?
+
+    copy $screen_device.h $end_y # Cap at screen height
+  }
+  copy &end_y &stack
+  copy 0.imm &banking
+
+  {
+    $remaining = compute 0xB.op $c_y $end_y push
+    copy &pc break.disp &pc $negative?
+    copy &pc break.disp &pc $zero?
+
+    { # while c_y < end_y
+      $stack <= paint_line($x, $c_y, $c_row, &image, &screen_device)
+      # These can get destroyed by called methods
+      copy $&image &image
+      copy $&screen_device &screen_device
+
+      # Increment row and y vars
+      $tmp = copy $c_row $stack push
+      $tmp = compute $add 1.imm $tmp
+      copy $tmp $c_row
+      $tmp = copy $c_y $stack push
+      compute $add 1.imm $tmp
+      copy $tmp $c_y
+
+      copy &end_y &stack
+
+      $remaining = compute 0xB.op $c_y $end_y push
+      copy &pc loop.disp &pc $not_zero?
+    }
+  }
+
+  copy &&return &stack # pop all args
+  copy $&return &pc pop
+
+stdlib_mem_copy2:
+  copy &pc stdlib_mem_copy.disp &pc
+
+# $stack <= paint_line($x, $y, $image_row, $&image, $&screen_device)
+paint_line:
+  $&screen_device, $&image, $image_row, $y, $x, $&return = $stack
+
+  &screen_device = copy $&screen_device 3.reg
+  $screen_device.bank = $screen_device 1.imm
+  $screen_device.block = $screen_device 3.imm
+  $screen_device.w, $screen_device.h = $screen_device 6.imm
+
+  &image as copy $&image 2.reg
+  $image.&data, $image.width, $image.height = $image
+
+  # 1. figure out which block we need
+  # screen row = y_offset + image_row
+  $screen_row = copy $y $stack push
+
+  $&source = copy $image_row $stack push
+  compute $multiply $image.width $&source
+  compute $add $image.&data $&source
+
+  copy 1.imm &banking
+  $row_offset = copy $screen_device.w $stack push
+  compute $multiply $screen_row $row_offset
+
+  $word_offset = copy $x $stack push
+  compute $add $row_offset $word_offset
+
+  $word_block_offset = compute $low_byte $word_offset $stack push
+  $&target = copy $screen_device.bank $stack push
+  compute $high_byte $&target $&target
+  compute $or $word_block_offset $&target
+
+  $block = copy $word_offset $stack push
+  compute $high_byte $block $block
+  compute $swap_bytes $block $block
+  copy $block $screen_device.block
+  copy 2.imm &banking
+
+  #$stack[1] <= banked_mem_copy($&source, $&target, $image.width, &screen_device)
+  $stack <= stdlib_mem_copy2($&source, $&target, $image.width)
+  #$copied = $stack
+
+  copy 0.imm &banking
+
+  copy &&return &stack
+  copy $&return &pc pop
+

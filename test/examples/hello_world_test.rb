@@ -1,8 +1,12 @@
 require "test_helper"
 
 class HelloWorldExampleTest < Minitest::Test
+  SOURCE_FILES = [
+    "examples/hello_world.ucisc",
+    "core/stdlib.ucisc"
+  ]
   def setup
-    @compiler = MicroCisc.load("examples/hello_world.ucisc")
+    @compiler = MicroCisc.load(SOURCE_FILES)
     @processor = MicroCisc.run(@compiler.serialize)
   end
 
@@ -11,6 +15,6 @@ class HelloWorldExampleTest < Minitest::Test
   end
 
   def test_executed_instructions_is_correct
-    assert_equal(103, @processor.count)
+    assert_equal(128, @processor.count)
   end
 end

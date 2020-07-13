@@ -2,57 +2,59 @@
 # Inspired by the SubX example near the bottom of this post:
 # http://akkartik.name/post/mu-2019-1
 #
-# The goal is to compare the implementation of the uCISC ISA to x86
-# as well as roughly see how things line up with SubX and look for
-# the coming MuCISC goals
-#
 # To run:
 #   $ exe/ucisc examples/factorial.ucisc
 #
-# Type 'break' when you hit the breakpoint, then `load(register(1))`
-# to view the result on the stack
-#
-# More instructions on the compiler and debugger are in the README.md
-# Or use GitHub https://github.com/grokthis/ucisc-ruby#usage
+# Stack result should be:
+# INFO: Stack: FFFF => 0x0018
 
-# Setup some simple syntax sugar for easy reference to stack and pc
+################
+# Syntax Setup #
+################
 $stack as 1.mem
 &pc as 0.reg
+
+# ALU op codes
+$subtract as 0xB.op
+$multiply as 0xC.op
 
 # Simple conditional syntax sugar
 $zero? as 0.eff
 
-# Init stack pointer
+################
+#  Code Entry  #
+################
 copy 0.imm &stack
 
-# Call factorial
-# Calling convention is to push args to stack, in order then push return address
-# On return, args and return address are removed, result is in it's place
 $stack[1] <= factorial(4.imm)
 
 # halt
 copy &pc &pc
 
+################
+# Main Section #
+################
 factorial: # (n)
+  $n, $return, $result = $stack
   # calculate n - 1, push to stack
-  compute 0xB.op/subtract/ 1.imm $stack push
+  $n_1 = compute $subtract 1.imm $n push
   {
     # factorial(1) = 1, copy 1 to result
-    copy $stack 1.imm $stack 3.imm $zero?
+    copy $n $result $zero?
     copy &pc break.disp &pc $zero?
   
     # compute factorial(n-1)
-    $stack <= factorial($stack)
+    $stack <= factorial($n_1)
 
     # multiply n * factorial(n-1)
-    compute 0xC.op $stack 1.imm $stack
+    compute $multiply $n $n_1
     # Copy answer to result
-    copy $stack $stack 3.imm
+    copy $n_1 $result
   } 
 
-  # pop n-1 off stack 
-  copy &stack 2.imm &stack
+  # pop to return address
+  copy &return &stack
 
   # jump return, pop return address off stack
-  copy $stack &pc pop
+  copy $return &pc pop
 
